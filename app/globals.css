@@ -43,11 +43,12 @@
 
 @layer base {
   * {
-    @apply border-border;
+    border-color: hsl(var(--border));
   }
 
   body {
-    @apply bg-background text-foreground;
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
@@ -93,4 +94,19 @@
   transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   transition-duration: 150ms;
+}
+
+/* Mapbox popup customization */
+.mapboxgl-popup-content {
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.mapboxgl-popup-tip {
+  display: none !important;
+}
+
+.mapboxgl-popup-close-button {
+  display: none !important;
 }

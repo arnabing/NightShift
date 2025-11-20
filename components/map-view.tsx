@@ -1,7 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { Mood } from "@/app/page";
 import { ArrowLeft } from "lucide-react";
+import { MapContainer } from "./map/map-container";
+import { VenuePopup } from "./map/venue-popup";
+import type { Venue } from "@/lib/types";
 
 interface MapViewProps {
   mood: Mood;
@@ -16,7 +20,88 @@ const moodLabels = {
   dance: "💃 Dance",
 };
 
+// Test venues for MVP - will be replaced with API data
+const TEST_VENUES: Venue[] = [
+  {
+    id: "1",
+    name: "Death & Co",
+    coordinates: { lat: 40.7264, lng: -73.9838 },
+    address: "433 E 6th St, New York, NY 10009",
+    neighborhood: "East Village",
+    moods: ["cocktails", "love"],
+    rating: 4.5,
+    priceLevel: 3,
+  },
+  {
+    id: "2",
+    name: "Employees Only",
+    coordinates: { lat: 40.7343, lng: -74.0021 },
+    address: "510 Hudson St, New York, NY 10014",
+    neighborhood: "West Village",
+    moods: ["cocktails"],
+    rating: 4.6,
+    priceLevel: 3,
+  },
+  {
+    id: "3",
+    name: "Marie's Crisis",
+    coordinates: { lat: 40.7338, lng: -74.0020 },
+    address: "59 Grove St, New York, NY 10014",
+    neighborhood: "West Village",
+    moods: ["dive", "love"],
+    rating: 4.4,
+    priceLevel: 1,
+  },
+  {
+    id: "4",
+    name: "Peculier Pub",
+    coordinates: { lat: 40.7298, lng: -73.9974 },
+    address: "145 Bleecker St, New York, NY 10012",
+    neighborhood: "Greenwich Village",
+    moods: ["dive", "sports"],
+    rating: 4.2,
+    priceLevel: 2,
+  },
+  {
+    id: "5",
+    name: "Boxers HK",
+    coordinates: { lat: 40.7618, lng: -73.9896 },
+    address: "742 9th Ave, New York, NY 10019",
+    neighborhood: "Hell's Kitchen",
+    moods: ["sports", "love"],
+    rating: 4.3,
+    priceLevel: 2,
+  },
+  {
+    id: "6",
+    name: "House of Yes",
+    coordinates: { lat: 40.7090, lng: -73.9345 },
+    address: "2 Wyckoff Ave, Brooklyn, NY 11237",
+    neighborhood: "Bushwick",
+    moods: ["dance", "love"],
+    rating: 4.5,
+    priceLevel: 2,
+  },
+  {
+    id: "7",
+    name: "Output",
+    coordinates: { lat: 40.7213, lng: -73.9584 },
+    address: "74 Wythe Ave, Brooklyn, NY 11249",
+    neighborhood: "Williamsburg",
+    moods: ["dance"],
+    rating: 4.4,
+    priceLevel: 3,
+  },
+];
+
 export function MapView({ mood, onBack }: MapViewProps) {
+  const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
+
+  // Filter venues by selected mood
+  const filteredVenues = mood
+    ? TEST_VENUES.filter((venue) => venue.moods.includes(mood))
+    : TEST_VENUES;
+
   return (
     <div className="flex-1 flex flex-col">
       {/* Header */}
@@ -41,32 +126,17 @@ export function MapView({ mood, onBack }: MapViewProps) {
         </div>
       </div>
 
-      {/* Map Container - Placeholder */}
-      <div className="flex-1 relative bg-background/50">
-        {/* Placeholder content */}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="glass rounded-2xl p-8 max-w-md text-center">
-            <div className="text-6xl mb-4">🗺️</div>
-            <h3 className="text-2xl font-bold mb-2">Map Coming Soon</h3>
-            <p className="text-muted-foreground mb-4">
-              Interactive map with venue markers will appear here
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Showing venues for: <span className="text-primary font-semibold">{mood && moodLabels[mood]}</span>
-            </p>
-          </div>
-        </div>
+      {/* Map Container */}
+      <MapContainer
+        venues={filteredVenues}
+        onVenueClick={setSelectedVenue}
+        selectedVenueId={selectedVenue?.id}
+      />
 
-        {/* Grid overlay for visual interest */}
-        <div
-          className="absolute inset-0 opacity-[0.02]"
-          style={{
-            backgroundImage:
-              "linear-gradient(hsl(var(--primary)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--primary)) 1px, transparent 1px)",
-            backgroundSize: "50px 50px",
-          }}
-        />
-      </div>
+      {/* Venue Popup */}
+      {selectedVenue && (
+        <VenuePopup venue={selectedVenue} onClose={() => setSelectedVenue(null)} />
+      )}
     </div>
   );
 }

@@ -1,0 +1,39 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Venue {
+  id           String       @id @default(cuid())
+  name         String
+  lat          Float
+  lng          Float
+  address      String
+  neighborhood String
+  rating       Float?
+  priceLevel   Int?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  moods        VenueMood[]
+
+  @@index([lat, lng])
+  @@map("venues")
+}
+
+model VenueMood {
+  id       String @id @default(cuid())
+  venueId  String
+  mood     String
+  venue    Venue  @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  @@unique([venueId, mood])
+  @@index([mood])
+  @@map("venue_moods")
+}

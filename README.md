@@ -15,10 +15,11 @@ A NYC nightlife guide that helps you find the hottest spots based on your mood. 
 ## Tech Stack
 
 - **Framework**: Next.js 16 with App Router
-- **Styling**: Tailwind CSS with custom nightlife theme
+- **Styling**: Tailwind CSS v4 with custom nightlife theme
 - **UI Components**: shadcn/ui
-- **Deployment**: Vercel (planned)
-- **Database**: Vercel Postgres (planned)
+- **Map**: Mapbox GL JS with react-map-gl
+- **Database**: Vercel Postgres + Prisma ORM
+- **Deployment**: Vercel
 
 ## Mood Options
 
@@ -30,18 +31,57 @@ A NYC nightlife guide that helps you find the hottest spots based on your mood. 
 
 ## Getting Started
 
+### Prerequisites
+
+1. **Mapbox Access Token**
+   - Sign up at [mapbox.com](https://account.mapbox.com/)
+   - Create a token with default public scopes
+
+2. **Vercel Postgres Database** (for production)
+   - Create a Vercel project
+   - Add Vercel Postgres storage
+   - Copy connection string
+
+### Local Development
+
 ```bash
-# Install dependencies
+# 1. Install dependencies
 npm install
 
-# Run development server
-npm run dev
+# 2. Set up environment variables
+# Create .env.local and add:
+NEXT_PUBLIC_MAPBOX_TOKEN=your_mapbox_token_here
+DATABASE_URL=your_postgres_connection_string_here
 
-# Build for production
-npm run build
+# 3. Set up database (if using Vercel Postgres or local Postgres)
+npm run db:push      # Push schema to database
+npm run db:seed      # Seed with NYC venue data
+
+# 4. Run development server
+npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) to see the app.
+
+### Deployment to Vercel
+
+```bash
+# 1. Install Vercel CLI (if not already installed)
+npm i -g vercel
+
+# 2. Deploy
+vercel
+
+# 3. Add environment variables in Vercel dashboard:
+# - NEXT_PUBLIC_MAPBOX_TOKEN
+# - DATABASE_URL (automatically added if using Vercel Postgres)
+
+# 4. Run database migrations and seed
+# In Vercel dashboard, go to your project settings and run:
+# npm run db:push && npm run db:seed
+```
+
+The app will automatically build and deploy on push to main branch.
 
 ## Design Philosophy
 
@@ -59,12 +99,15 @@ Open [http://localhost:3000](http://localhost:3000) to see the app.
 
 ## Roadmap
 
-### Phase 1: MVP (Current)
+### Phase 1: MVP ✅ COMPLETE
 - [x] Landing page with mood selector
 - [x] Glass morphism modal
 - [x] Fender amp-style dial UI
-- [ ] Map integration
-- [ ] Venue data seeding
+- [x] Mapbox GL JS integration
+- [x] Interactive venue markers with emoji indicators
+- [x] Venue database (25 NYC venues seeded)
+- [x] Mood-based filtering
+- [x] Prisma + Vercel Postgres setup
 
 ### Phase 2: Data Layer
 - [ ] NYC 311 noise complaint integration
