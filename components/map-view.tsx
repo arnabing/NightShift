@@ -153,7 +153,9 @@ export function MapView({ mood, onBack }: MapViewProps) {
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     <div className="text-sm font-medium">⭐ {venue.rating}</div>
-                    <div className="text-sm text-muted-foreground">{getPriceSymbol(venue.priceLevel)}</div>
+                    <div className="text-sm text-muted-foreground">
+                      {venue.priceLevel ? getPriceSymbol(venue.priceLevel) : "N/A"}
+                    </div>
                   </div>
                 </div>
               </button>
@@ -198,7 +200,9 @@ export function MapView({ mood, onBack }: MapViewProps) {
                 </div>
                 <div>
                   <span className="text-sm text-muted-foreground">Price</span>
-                  <p className="font-semibold">{getPriceSymbol(selectedVenue.priceLevel)}</p>
+                  <p className="font-semibold">
+                    {selectedVenue.priceLevel ? getPriceSymbol(selectedVenue.priceLevel) : "N/A"}
+                  </p>
                 </div>
               </div>
 
