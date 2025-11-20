@@ -1,8 +1,15 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Map components are loaded dynamically with ssr: false
-  // to prevent server-side rendering issues
+  // Experimental: tell Turbopack to skip these packages during optimization
+  experimental: {
+    optimizePackageImports: [],
+    turbo: {
+      resolveAlias: {
+        "mapbox-gl": "mapbox-gl/dist/mapbox-gl.js",
+      },
+    },
+  },
 };
 
 export default nextConfig;
