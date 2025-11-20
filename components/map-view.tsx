@@ -1,11 +1,20 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { Mood } from "@/app/page";
 import { ArrowLeft } from "lucide-react";
-import { MapContainer } from "./map/map-container";
-import { VenuePopup } from "./map/venue-popup";
 import type { Venue } from "@/lib/types";
+
+// Dynamically import map components to prevent SSR
+const MapContainer = dynamic(() => import("./map/map-container").then((mod) => ({ default: mod.MapContainer })), {
+  ssr: false,
+  loading: () => <div className="flex-1 flex items-center justify-center">Loading map...</div>,
+});
+
+const VenuePopup = dynamic(() => import("./map/venue-popup").then((mod) => ({ default: mod.VenuePopup })), {
+  ssr: false,
+});
 
 interface MapViewProps {
   mood: Mood;
