@@ -209,14 +209,16 @@ export function MapView({ mood, onBack }: MapViewProps) {
               <div className="pt-2">
                 <span className="text-sm text-muted-foreground">Vibes</span>
                 <div className="flex flex-wrap gap-2 mt-1">
-                  {selectedVenue.moods.map((m) => (
-                    <span
-                      key={m}
-                      className="px-3 py-1 rounded-full bg-primary/10 text-sm"
-                    >
-                      {moodLabels[m as Mood]}
-                    </span>
-                  ))}
+                  {selectedVenue.moods
+                    .filter((m): m is Exclude<Mood, null> => m !== null)
+                    .map((m) => (
+                      <span
+                        key={m}
+                        className="px-3 py-1 rounded-full bg-primary/10 text-sm"
+                      >
+                        {moodLabels[m]}
+                      </span>
+                    ))}
                 </div>
               </div>
             </div>
