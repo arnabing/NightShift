@@ -34,8 +34,9 @@ async function showComplaintData() {
       if (pattern.byDayOfWeek) {
         console.log(`   Complaints by Day:`);
         Object.entries(pattern.byDayOfWeek).forEach(([day, count]) => {
-          if (count > 0) {
-            console.log(`      ${day}: ${count}`);
+          const numCount = Number(count);
+          if (numCount > 0) {
+            console.log(`      ${day}: ${numCount}`);
           }
         });
       }
