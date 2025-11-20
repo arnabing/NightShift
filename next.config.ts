@@ -1,12 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  transpilePackages: ["react-map-gl", "mapbox-gl"],
+  // Use serverExternalPackages instead of transpilePackages
+  // to avoid conflicts in Turbopack
   serverExternalPackages: ["react-map-gl", "mapbox-gl"],
-  experimental: {
-    serverComponentsExternalPackages: ["react-map-gl", "mapbox-gl"],
-  },
-  turbopack: {},
 };
 
 export default nextConfig;
