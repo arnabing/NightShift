@@ -1,20 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import dynamic from "next/dynamic";
 import { Mood } from "@/app/page";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, MapPin } from "lucide-react";
 import type { Venue } from "@/lib/types";
-
-// Dynamically import map components to prevent SSR
-const MapContainer = dynamic(() => import("./map/map-container").then((mod) => ({ default: mod.MapContainer })), {
-  ssr: false,
-  loading: () => <div className="flex-1 flex items-center justify-center">Loading map...</div>,
-});
-
-const VenuePopup = dynamic(() => import("./map/venue-popup").then((mod) => ({ default: mod.VenuePopup })), {
-  ssr: false,
-});
 
 interface MapViewProps {
   mood: Mood;
@@ -111,6 +100,8 @@ export function MapView({ mood, onBack }: MapViewProps) {
     ? TEST_VENUES.filter((venue) => venue.moods.includes(mood))
     : TEST_VENUES;
 
+  const getPriceSymbol = (level: number) => "$".repeat(level);
+
   return (
     <div className="flex-1 flex flex-col">
       {/* Header */}
@@ -135,16 +126,98 @@ export function MapView({ mood, onBack }: MapViewProps) {
         </div>
       </div>
 
-      {/* Map Container */}
-      <MapContainer
-        venues={filteredVenues}
-        onVenueClick={setSelectedVenue}
-        selectedVenueId={selectedVenue?.id}
-      />
+      {/* Venue List - Temporary placeholder until map is ready */}
+      <div className="flex-1 overflow-y-auto bg-gradient-to-br from-background via-background to-primary/5">
+        <div className="max-w-4xl mx-auto px-4 py-8">
+          <div className="mb-6 glass-light rounded-lg p-4 border border-border/50">
+            <p className="text-sm text-muted-foreground text-center">
+              Interactive map coming soon! Here are {filteredVenues.length} venues matching your vibe:
+            </p>
+          </div>
 
-      {/* Venue Popup */}
+          <div className="grid gap-4">
+            {filteredVenues.map((venue) => (
+              <button
+                key={venue.id}
+                onClick={() => setSelectedVenue(venue)}
+                className="glass-light rounded-xl p-5 border border-border/50 hover:border-primary/50 transition-all text-left hover:scale-[1.02] hover:shadow-lg"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-lg mb-1">{venue.name}</h3>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+                      <MapPin className="w-4 h-4" />
+                      <span>{venue.neighborhood}</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">{venue.address}</p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <div className="text-sm font-medium">⭐ {venue.rating}</div>
+                    <div className="text-sm text-muted-foreground">{getPriceSymbol(venue.priceLevel)}</div>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Venue Detail Modal */}
       {selectedVenue && (
-        <VenuePopup venue={selectedVenue} onClose={() => setSelectedVenue(null)} />
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+          onClick={() => setSelectedVenue(null)}
+        >
+          <div
+            className="glass-light rounded-2xl p-6 max-w-md w-full border border-border/50"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between mb-4">
+              <h2 className="text-2xl font-bold">{selectedVenue.name}</h2>
+              <button
+                onClick={() => setSelectedVenue(null)}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <MapPin className="w-5 h-5 text-primary" />
+                <div>
+                  <p className="font-medium">{selectedVenue.neighborhood}</p>
+                  <p className="text-sm text-muted-foreground">{selectedVenue.address}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4 pt-2">
+                <div>
+                  <span className="text-sm text-muted-foreground">Rating</span>
+                  <p className="font-semibold">⭐ {selectedVenue.rating}</p>
+                </div>
+                <div>
+                  <span className="text-sm text-muted-foreground">Price</span>
+                  <p className="font-semibold">{getPriceSymbol(selectedVenue.priceLevel)}</p>
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <span className="text-sm text-muted-foreground">Vibes</span>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {selectedVenue.moods.map((m) => (
+                    <span
+                      key={m}
+                      className="px-3 py-1 rounded-full bg-primary/10 text-sm"
+                    >
+                      {moodLabels[m as Mood]}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
