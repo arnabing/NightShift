@@ -2,39 +2,39 @@
 
 @layer base {
   :root {
-    /* Nightlife Theme - Dark with neon purple/blue accents */
-    --background: 240 10% 8%; /* Very dark blue-gray */
-    --foreground: 0 0% 98%; /* Almost white */
+    /* Light Mode - Apple Maps Inspired */
+    --background: 0 0% 98%; /* Soft white */
+    --foreground: 240 10% 15%; /* Dark blue-gray text */
 
-    --card: 240 10% 12%; /* Slightly lighter than background */
-    --card-foreground: 0 0% 98%;
+    --card: 0 0% 100%; /* Pure white */
+    --card-foreground: 240 10% 15%;
 
-    --popover: 240 10% 12%;
-    --popover-foreground: 0 0% 98%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 15%;
 
-    --primary: 270 80% 60%; /* Vibrant purple - main accent */
+    --primary: 270 80% 55%; /* Vibrant purple - main accent */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 240 70% 55%; /* Electric blue */
+    --secondary: 240 70% 50%; /* Electric blue */
     --secondary-foreground: 0 0% 100%;
 
-    --muted: 240 10% 20%;
-    --muted-foreground: 240 5% 65%;
+    --muted: 240 5% 92%; /* Light gray */
+    --muted-foreground: 240 4% 46%;
 
-    --accent: 320 75% 58%; /* Hot pink/magenta accent */
-    --accent-foreground: 0 0% 100%;
+    --accent: 320 75% 95%; /* Very light pink for hover states */
+    --accent-foreground: 320 75% 35%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 240 10% 20%;
-    --input: 240 10% 20%;
-    --ring: 270 80% 60%;
+    --border: 240 5% 90%; /* Subtle borders */
+    --input: 240 5% 90%;
+    --ring: 270 80% 55%;
 
     --radius: 0.75rem;
 
-    --chart-1: 270 80% 60%;
-    --chart-2: 240 70% 55%;
+    --chart-1: 270 80% 55%;
+    --chart-2: 240 70% 50%;
     --chart-3: 320 75% 58%;
     --chart-4: 190 75% 50%;
     --chart-5: 280 60% 65%;
@@ -53,24 +53,26 @@
   }
 }
 
-/* Glass morphism effect for modals */
+/* Glass morphism effect - Apple style frosted glass */
 .glass {
-  background: rgba(20, 20, 30, 0.7);
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.125);
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
 
 .glass-light {
-  background: rgba(30, 30, 45, 0.6);
-  backdrop-filter: blur(12px) saturate(150%);
-  -webkit-backdrop-filter: blur(12px) saturate(150%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
 }
 
-/* NYC skyline background - subtle so it doesn't interfere with readability */
+/* NYC skyline background - very subtle for light mode */
 .nyc-background {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 320' opacity='0.03'%3E%3Cpath fill='%239333ea' d='M0,192L48,197.3C96,203,192,213,288,229.3C384,245,480,267,576,250.7C672,235,768,181,864,181.3C960,181,1056,235,1152,234.7C1248,235,1344,181,1392,154.7L1440,128L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z'%3E%3C/path%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1440 320' opacity='0.02'%3E%3Cpath fill='%239333ea' d='M0,192L48,197.3C96,203,192,213,288,229.3C384,245,480,267,576,250.7C672,235,768,181,864,181.3C960,181,1056,235,1152,234.7C1248,235,1344,181,1392,154.7L1440,128L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z'%3E%3C/path%3E%3C/svg%3E");
   background-repeat: repeat-x;
   background-position: bottom;
   background-size: 1440px auto;
@@ -109,4 +111,24 @@
 
 .mapboxgl-popup-close-button {
   display: none !important;
+}
+
+/* Custom map markers - adjusted for light map */
+.custom-marker {
+  cursor: pointer;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+  transition: all 0.2s ease;
+}
+
+.custom-marker:hover {
+  transform: scale(1.15) translateY(-5px);
+  filter: drop-shadow(0 4px 8px rgba(147, 51, 234, 0.5));
+}
+
+.mapboxgl-marker {
+  z-index: 1;
+}
+
+.mapboxgl-marker:hover {
+  z-index: 10;
 }

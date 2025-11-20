@@ -1,12 +1,186 @@
-# CLAUDE.md
+# CLAUDE.md - NightShift AI Context
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides comprehensive context for AI assistants (like Claude) working on NightShift.
+
+**Last Updated:** November 2025 | **Version:** 0.2.0
+
+---
 
 ## Project Overview
 
-NightShift is a NYC nightlife guide that helps users find venues based on their mood. The core UX is a Fender amp-style dial for selecting vibes ("Nice cocktails", "Dive loser", "Sports", "Find love", "Dance"), followed by a map view showing relevant venues.
+**NightShift** is a dating venue discovery app for NYC that helps men find the best places to meet women. Unlike traditional nightlife apps that just list venues, NightShift uses data science and AI to calculate a "meeting potential" score for each venue based on multiple signals.
 
-**Current Status**: MVP phase with landing page and mood selector completed. Map integration and venue data seeding are next priorities.
+### Core Problem We're Solving
+
+Men in NYC struggle to find venues with:
+- Good gender ratios (not sausage fests)
+- Active social scenes (not dead/empty)
+- The right vibe for meeting people (not too loud, not too quiet)
+- Appropriate crowd demographics (age, style, energy)
+
+Traditional apps show ratings and reviews, but don't answer: **"Where can I actually meet someone tonight?"**
+
+### Our Solution
+
+Use free public data + AI to score venues on "meeting potential":
+
+1. **NYC 311 Noise Complaints** - Predict which venues will be busy (KEY INNOVATION)
+2. **Review Text Analysis (Claude NLP)** - Infer gender ratios and social vibe
+3. **Venue Metadata (Yelp/Foursquare)** - Ratings, price, category
+4. **Composite Scoring Algorithm** - Combine signals into 0-100 score
+
+**Current Status:** ✅ Deployed to Vercel | ⏳ Building data pipeline
+
+---
+
+## KEY INNOVATION: Predictive Noise Complaint Analysis
+
+### Why 311 Complaints are Brilliant
+
+NYC's 311 Open Data portal provides free, unlimited access to citizen noise complaints with:
+- Precise timestamps (down to the minute)
+- Exact addresses and geocoordinates
+- Complaint types ("Loud Music/Party", "Noise - Commercial")
+- Historical data going back years
+- Updated in real-time
+
+**Key Insight:** Venues that consistently generate noise complaints on Friday/Saturday nights are **predictably active** venues.
+
+### Complaint Pattern Analysis
+
+```typescript
+// Example: Venue with consistent weekend activity
+{
+  "venue": "Death & Co",
+  "total_complaints_90d": 18,
+  "friday_pattern": [2, 1, 3, 2, 2, 3, 1, 2, 3, 2],  // Last 10 Fridays
+  "saturday_pattern": [3, 2, 3, 4, 2, 3, 3, 2, 4, 3], // Last 10 Saturdays
+  "peak_hours": ["22:00", "23:00", "00:00", "01:00"],
+  "consistency_score": 85,  // Very predictable
+  "prediction": "High activity this Friday 10PM-1AM"
+}
+```
+
+**This Approach is:**
+1. **Free** - No API costs
+2. **Accurate** - Real citizen reports
+3. **Predictive** - Historical patterns forecast future activity
+4. **Unique** - No competitor uses this data this way
+
+---
+
+## Data Strategy - Activity Hotspot Intelligence
+
+### Core Philosophy
+**Combine multiple real-time and historical signals to show users where fun activity is happening RIGHT NOW.**
+
+### Data Sources (Priority Order)
+
+#### TIER 1: Foundation (Already Built - FREE)
+
+1. **NYC 311 Noise Complaints** (FREE - Scripts exist!)
+   - **What it tells us**: Real activity happening at venues
+   - **API**: `https://data.cityofnewyork.us/resource/erm2-nwe9.json`
+   - **Rate Limit**: 10,000/hour with free app token
+   - **Update Frequency**: Weekly
+   - **Scripts**: `scripts/data-collection/fetch-311-complaints.ts`
+   - **Key Insight**: Consistent complaints = predictable activity hotspots
+
+2. **NYS Liquor Authority Database** (FREE - Script exists!)
+   - **What it tells us**: Complete authoritative list of ALL bars/clubs in NYC
+   - **API**: `https://data.ny.gov/resource/9s3h-dpkz.json`
+   - **Rate Limit**: 10,000/hour
+   - **Update Frequency**: Monthly
+   - **Scripts**: `scripts/data-collection/fetch-nys-liquor.ts`
+   - **Coverage**: ~10,000 licensed venues in NYC
+
+#### TIER 2: Activity Intelligence (Week 1 - FREE + PAID)
+
+3. **Yelp Fusion API** (FREE)
+   - **What it tells us**: Gender mentions, dating atmosphere, social vibe from reviews
+   - **Free tier**: 5,000 calls/day
+   - **Rate Limit**: 5 QPS
+   - **Update Frequency**: Weekly for historical data
+   - **Cost**: FREE
+   - **To implement**: `scripts/data-collection/fetch-yelp.ts`
+
+4. **BestTime.app** (PAID - Best for live activity)
+   - **What it tells us**: Real-time foot traffic, live "busyness percentage", predicted activity
+   - **Why better than Google**: More accurate, cheaper, foot-traffic focused
+   - **Update Frequency**: Real-time on map load, weekly for historical patterns
+   - **Cost**: ~$200/month for 10K queries (free tier available)
+   - **Alternative**: Google Places Popular Times (~$20/month)
+   - **To implement**: `scripts/data-collection/fetch-besttime.ts`
+
+5. **Eventbrite API** (FREE)
+   - **What it tells us**: Ladies nights, singles mixers, party events happening tonight
+   - **Update Frequency**: Daily scrape
+   - **Cost**: FREE
+   - **To implement**: `scripts/data-collection/fetch-events.ts`
+
+#### TIER 3: Enhanced Signals (Week 2-3 - FREE)
+
+6. **Ticketmaster API** (FREE)
+   - Concerts, sports events, entertainment drawing crowds
+
+7. **NYC Open Data** (FREE)
+   - Street fairs, public events, festivals
+
+8. **Claude API (Anthropic)** (SMALL COST)
+   - NLP analysis of reviews for gender ratios and social vibe
+   - Cost: ~$3 per 1M input tokens (~$5-10 one-time for 200 venues)
+
+---
+
+## Meeting Potential Scoring Algorithm
+
+### Composite Score Formula (0-100)
+
+```typescript
+const calculateMeetingPotential = (venue: Venue) => {
+  // Gender Balance (30% weight) - Optimal: 40-60% female
+  const femalePercent = venue.genderRatio.female;
+  const genderBalance = femalePercent >= 40 && femalePercent <= 60
+    ? 100
+    : 100 - Math.abs(50 - femalePercent) * 2;
+
+  // Activity Level (25% weight) - Based on 311 complaints
+  const complaints = venue.noiseComplaints;
+  const activityLevel = complaints >= 10 && complaints <= 25
+    ? 100
+    : complaints < 10 ? complaints * 8 : 100 - (complaints - 25) * 3;
+
+  // Socialibility (20% weight) - Can you talk?
+  const venueTypeScores = {
+    lounge: 90, cocktail_bar: 85, rooftop: 85,
+    bar: 70, sports_bar: 60, dive_bar: 50, nightclub: 40
+  };
+  const socialibility = venueTypeScores[venue.venueType] || 60;
+
+  // Quality (15% weight) - Overall rating
+  const quality = (venue.rating / 5) * 100;
+
+  // Vibe (10% weight) - NLP sentiment
+  const vibe = venue.reviewSentiment?.socialVibeScore || 50;
+
+  return (
+    genderBalance * 0.30 +
+    activityLevel * 0.25 +
+    socialibility * 0.20 +
+    quality * 0.15 +
+    vibe * 0.10
+  );
+};
+```
+
+### Score Interpretation
+- **90-100:** Elite dating venue
+- **75-89:** Excellent meeting potential
+- **60-74:** Good option
+- **45-59:** Mediocre
+- **0-44:** Poor for meeting people
+
+---
 
 ## Development Commands
 
@@ -14,147 +188,311 @@ NightShift is a NYC nightlife guide that helps users find venues based on their 
 # Install dependencies
 npm install
 
-# Run development server (opens on http://localhost:3000)
-npm run dev
+# Database setup
+npm run db:push          # Push schema to Postgres
+npm run db:seed          # Seed initial venues
 
-# Build for production
-npm run build
+# Development
+npm run dev              # Start dev server (localhost:3000)
 
-# Start production server
-npm start
+# Build
+npm run build            # Production build
+npm start                # Start production server
 
-# Lint code
-npm run lint
+# Data collection (to be added)
+npm run fetch:311        # Pull 311 complaints
+npm run fetch:yelp       # Pull Yelp data
+npm run analyze:reviews  # Run Claude NLP analysis
+npm run calc:scores      # Calculate meeting scores
 ```
+
+---
 
 ## Tech Stack
 
-- **Framework**: Next.js 16 with App Router (React 19)
-- **Language**: TypeScript with strict mode enabled
-- **Styling**: Tailwind CSS v4 (using PostCSS plugin)
-- **UI Components**: shadcn/ui (New York style)
-- **Deployment Target**: Vercel
-- **Future**: Vercel Postgres for database
+- **Framework:** Next.js 16 with App Router (React 19)
+- **Language:** TypeScript (strict mode)
+- **Database:** Vercel Postgres + Prisma ORM
+- **Styling:** Tailwind CSS v4
+- **UI:** Custom glass morphism components
+- **Icons:** Lucide React
+- **Deployment:** Vercel
+- **External Services:** Claude API, Yelp, Foursquare, NYC Open Data
 
-## Architecture
+---
 
-### File Structure
+## Database Schema
 
+### Current Prisma Schema (Existing)
+
+```prisma
+model Venue {
+  id                String          @id @default(cuid())
+  name              String
+  lat               Float
+  lng               Float
+  address           String
+  neighborhood      String
+  rating            Float?
+  priceLevel        Int?            // 1-4
+
+  moods             VenueMood[]
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+}
+
+model VenueMood {
+  id        String   @id @default(cuid())
+  venueId   String
+  venue     Venue    @relation(fields: [venueId], references: [id])
+  mood      String   // "cocktails", "dive", "sports", "love", "dance"
+}
 ```
-app/
-├── layout.tsx          # Root layout with dark mode, Inter font
-├── page.tsx            # Main page - state manager for mood selection flow
-└── globals.css         # Theme variables, glass morphism, neon effects
 
-components/
-├── mood-selector.tsx   # Glass morphism modal with dial and "Let's Go" button
-├── mood-dial.tsx       # SVG-based Fender amp dial (circular mood selector)
-└── map-view.tsx        # Map view shown after mood selection
+### Needed Schema Additions (Phase 2)
 
-lib/
-└── utils.ts            # cn() helper for Tailwind class merging
+```prisma
+model Venue {
+  // ... existing fields ...
+
+  // External API IDs
+  yelpId            String?         @unique
+  googlePlaceId     String?         @unique
+  foursquareId      String?         @unique
+  liquorLicenseId   String?
+
+  // Meeting potential scoring
+  meetingScore      Float?          // 0-100 composite score
+  genderRatio       Json?           // { male: 60, female: 40, confidence: "medium" }
+  avgAge            Int?            // Average crowd age
+  socialibilityScore Float?         // 0-100
+  venueType         String?         // "bar", "lounge", "nightclub", etc.
+
+  // 311 Complaint data (KEY FEATURE)
+  noiseComplaints   Int?            @default(0)  // Last 90 days
+  complaintPattern  Json?           // Weekly pattern data
+  lastComplaint     DateTime?
+
+  // Review sentiment (Claude NLP)
+  reviewSentiment   Json?           // NLP analysis results
+
+  // Data freshness
+  dataLastFetched   DateTime?
+
+  // Future: Crowdsourced data
+  checkIns          CheckIn[]
+}
+
+model CheckIn {
+  id                    String    @id @default(cuid())
+  venueId               String
+  venue                 Venue     @relation(fields: [venueId], references: [id])
+
+  // Anonymous user reports
+  reportedGenderRatio   Json?     // { male: 70, female: 30 }
+  reportedCrowdLevel    Int?      // 0-100
+  reportedAgeRange      String?   // "20s", "30s", "40s+"
+
+  timestamp             DateTime  @default(now())
+
+  @@index([venueId, timestamp])
+}
 ```
 
-### Component Flow
+---
 
-1. **app/page.tsx** manages global state:
-   - `selectedMood`: Current mood selection ("cocktails" | "dive" | "sports" | "love" | "dance" | null)
-   - `showMap`: Boolean to toggle between MoodSelector and MapView
-   - Handles transitions with 300ms delays for animations
+## Implementation Roadmap
 
-2. **MoodSelector** contains:
-   - Glass morphism modal wrapper
-   - MoodDial component for interactive selection
-   - "Let's Go" button that triggers transition to map
+### ✅ Phase 0: Infrastructure (COMPLETE)
+- [x] Next.js 16 app deployed to Vercel
+- [x] Prisma + Vercel Postgres setup
+- [x] Mood selector UI with Fender amp dial
+- [x] Map view with Mapbox GL JS
+- [x] Glass morphism design system
+- [x] Interactive drawer for venue details
 
-3. **MoodDial** features:
-   - SVG-based circular dial (360x360 viewBox)
-   - 5 mood options positioned around circle with trigonometry
-   - Center knob with pointer that animates to selected mood
-   - Tick marks for each mood position
+### ⏳ Phase 1: Light Mode Redesign + Real Data (THIS WEEK)
 
-### State Management
+**Goal:** Apple Maps-style light interface + populate map with real activity data
 
-State is lifted to `app/page.tsx` and flows down via props. No global state management library is used.
+#### Step 1: Visual Redesign (1-2 hours)
+- [ ] Update `app/globals.css` - Light theme, white backgrounds, readable text
+- [ ] Update `components/map-view-clean.tsx` - Light Mapbox style (`streets-v11`)
+- [ ] Update `components/mood-selector.tsx` - Light theme
+- [ ] Update `app/page.tsx` - Light gradients
+- [ ] Polish glass morphism effects for light backgrounds
 
-### Type System
+#### Step 2: Populate Real Venues (30 mins)
+- [ ] Run `npm run fetch:liquor` - Import 100 real NYC bars from NYS database
+- [ ] Run `npm run fetch:311` - Add 311 complaint activity patterns
+- **Deliverable:** Map shows 100 real venues with activity data
 
-- `Mood` type defined in `app/page.tsx`: `"cocktails" | "dive" | "sports" | "love" | "dance" | null`
-- All components use TypeScript with strict mode
-- Import alias `@/*` maps to root directory
+#### Step 3: Yelp Integration (4 hours)
+- [ ] Sign up for Yelp Fusion API (free tier)
+- [ ] Create `scripts/data-collection/fetch-yelp.ts`
+- [ ] Fetch venue details, reviews, photos
+- [ ] Analyze reviews for gender/dating keywords
+- [ ] Update database with confidence scores
+- **Deliverable:** Gender signals, better venue photos, ratings
 
-## Styling System
+#### Step 4: Live Activity Data (4 hours)
+**Option A: BestTime.app (recommended)**
+- [ ] Sign up at besttime.app
+- [ ] Create `scripts/data-collection/fetch-besttime.ts`
+- [ ] Get real-time foot traffic for venues
+- [ ] Add "Busy Now: 85%" indicator to map markers
 
-### Theme
+**Option B: Google Places API (cheaper)**
+- [ ] Enable Google Places API
+- [ ] Fetch Popular Times data
+- [ ] Get live busyness estimates
 
-The app uses a custom nightlife theme defined in `app/globals.css`:
-- **Primary**: `hsl(270 80% 60%)` - Vibrant purple for main accents
-- **Secondary**: `hsl(240 70% 55%)` - Electric blue
-- **Accent**: `hsl(320 75% 58%)` - Hot pink/magenta
-- **Background**: `hsl(240 10% 8%)` - Very dark blue-gray
+**Deliverable:** Live "hot right now" indicators on map
 
-All colors use CSS custom properties (e.g., `hsl(var(--primary))`).
+#### Step 5: Event Intelligence (3 hours)
+- [ ] Sign up for Eventbrite API
+- [ ] Create `scripts/data-collection/fetch-events.ts`
+- [ ] Find events happening tonight at venues
+- [ ] Show "Ladies Night Tonight" badges on markers
+- **Deliverable:** Event-driven activity predictions
 
-### Custom Classes
+### 📅 Phase 2: API Integration (Week 2)
 
-- `.glass` - Glass morphism with backdrop blur for modals
-- `.glass-light` - Lighter variant of glass morphism
-- `.nyc-background` - Subtle NYC skyline SVG pattern
-- `.neon-glow` - Purple neon box-shadow effect
-- `.neon-text` - Purple neon text-shadow effect
+1. Yelp API integration
+   - Fetch business data for top 200 venues
+   - Store ratings, reviews (3 per venue), photos
+   - Implement rate limiting (5 QPS)
 
-### shadcn/ui Configuration
+2. Foursquare API integration
+   - Fetch tips and tastes
+   - Store popularity scores
+   - Get pre-labeled categories ("date spot")
 
-Configured in `components.json`:
-- Style: "new-york"
-- Base color: "zinc"
-- Uses CSS variables for theming
-- Component aliases: `@/components`, `@/lib/utils`, `@/components/ui`
+**Deliverable:** 200 venues with review data
 
-## Design Philosophy
+### 🧠 Phase 3: AI Analysis (Week 2-3)
 
-**Nightlife Aesthetic:**
-- Dark mode always enabled (set in `app/layout.tsx`)
-- High contrast for readability in dim lighting
-- Glass morphism effects for depth
-- Neon purple/blue accents for energy
-- Ambient gradient overlays on backgrounds
+1. Claude NLP integration
+   - Analyze review text for gender ratio signals
+   - Extract age demographics
+   - Determine social vibe scores
+   - Cost: ~$5 for 200 venues
 
-**Copy Tone:**
-- Casual, bro-friendly language ("Stop asking the groupchat, just check the map")
-- Playful mood labels ("Dive loser", "Find love")
+2. Scoring algorithm implementation
+   - Calculate composite meeting potential scores
+   - Store in database
+   - Validate against manual inspection
 
-**Mobile-First:**
-- Responsive breakpoints using Tailwind's `md:` prefix
-- Touch-friendly button sizes
-- No authentication required for MVP
+**Deliverable:** 200 venues with AI-powered meeting scores
 
-## Planned Data Architecture
+### 🎨 Phase 4: UI Enhancement (Week 3-4)
 
-The app will integrate multiple data sources:
+1. Update venue cards:
+   - Meeting score badge (0-100)
+   - Gender ratio indicator
+   - "Best time to go" based on complaint patterns
+   - Activity level indicator
 
-1. **NYC 311 API** - Noise complaints (indicates busy/loud venues)
-2. **NYS Liquor Authority** - All licensed venues database
-3. **Yelp Fusion API** - Reviews and ratings
-4. **BestTime.app** - Foot traffic data
-5. **AI Analysis** - Claude API for review sentiment analysis
-6. **Crowdsourcing** - User-submitted reports (Phase 3)
+2. Add filters and sorting:
+   - Filter by meeting score threshold
+   - Filter by neighborhood
+   - Sort by meeting potential
+   - Sort by activity level
 
-These will populate the map view with venue markers and demographic indicators.
+3. Venue detail modal:
+   - Score breakdown (show component scores)
+   - Historical activity chart
+   - Recent check-ins (future)
 
-## Next Development Priorities
+**Deliverable:** Rich UI showing all venue insights
 
-Per the roadmap in README.md:
+### 🔄 Phase 5: Data Refresh (Week 4)
 
-**Phase 1 (Current MVP):**
-- ✅ Landing page with mood selector
-- ✅ Glass morphism modal
-- ✅ Fender amp-style dial UI
-- 🚧 Map integration
-- 🚧 Venue data seeding
+1. Vercel Cron jobs:
+   - Weekly: 311 complaint refresh
+   - Monthly: Yelp rating update
+   - Monthly: Foursquare tip update
+   - Quarterly: NLP re-analysis
 
-**Phase 2:** Data layer integration (APIs listed above)
+**Deliverable:** Automated data pipeline
 
-**Phase 3:** Crowdsourcing and gamification
+---
 
-**Phase 4:** User accounts and social features
+## Environment Variables Needed
+
+```bash
+# Database
+DATABASE_URL=postgresql://...
+
+# Mapbox (geocoding + future map view)
+NEXT_PUBLIC_MAPBOX_TOKEN=pk.ey...
+
+# Yelp
+YELP_API_KEY=your_key_here
+
+# Foursquare
+FOURSQUARE_API_KEY=your_key_here
+
+# Claude (Anthropic)
+ANTHROPIC_API_KEY=sk-ant-...
+
+# NYC Open Data (optional, for higher rate limits)
+NYC_OPEN_DATA_APP_TOKEN=your_token
+```
+
+---
+
+## Cost Summary
+
+### One-Time Setup
+- Geocoding (Mapbox): $0 (within free tier)
+- NLP analysis (Claude): ~$5
+- **Total: $5**
+
+### Monthly Operating (MVP)
+- All APIs: $0 (free tiers)
+- Vercel Hosting: $0 (hobby tier)
+- Vercel Postgres: $0 (hobby tier)
+- **Total: $0/month**
+
+### Optional Upgrades (Post-MVP)
+- Google Places API: +$20/mo
+- BestTime.app: +$49/mo
+- Vercel Pro: +$20/mo
+
+---
+
+## Key Technical Decisions
+
+**Q: Why no real-time foot traffic?**
+A: BestTime.app costs $49-199/mo. For MVP, we use 311 complaint patterns (historical prediction) + crowdsourced check-ins. Gives 80% of value at $0 cost.
+
+**Q: Why Claude over OpenAI?**
+A: Better at nuanced analysis, has Vision API for photos, more affordable ($3/1M vs $15/1M).
+
+**Q: Why start with 200 venues?**
+A: Stays within all free tier limits, manageable for MVP, enough to validate approach.
+
+**Q: Why focus on gender ratio?**
+A: It's the #1 signal for meeting potential, no other app provides it, inferable from reviews, hugely valuable.
+
+---
+
+## Success Metrics
+
+### MVP Launch (Week 4)
+- [ ] 200+ venues with meeting scores
+- [ ] 150+ venues with gender ratio estimates
+- [ ] 100% venues have 311 complaint data
+- [ ] Deployed to production
+- [ ] Mobile-responsive UI
+
+### Post-Launch (Month 1)
+- [ ] 100+ daily active users
+- [ ] 10+ crowdsourced check-ins/day
+- [ ] Avg session time >3 minutes
+- [ ] Page load <2 seconds
+
+---
+
+**For detailed API documentation, scoring algorithm details, and implementation guides, see the full research report in previous conversation context.**

@@ -19,11 +19,38 @@ model Venue {
   neighborhood String
   rating       Float?
   priceLevel   Int?
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  moods        VenueMood[]
+
+  // External API IDs
+  yelpId          String?   @unique
+  googlePlaceId   String?   @unique
+  foursquareId    String?   @unique
+  liquorLicenseId String?
+
+  // Meeting potential scoring
+  meetingScore       Float?  // 0-100 composite score
+  genderRatio        Json?   // { male: 60, female: 40, confidence: "medium" }
+  avgAge             Int?    // Average crowd age
+  socialibilityScore Float?  // 0-100
+  venueType          String? // "bar", "lounge", "nightclub", etc.
+
+  // 311 Complaint data (KEY FEATURE)
+  noiseComplaints  Int?      @default(0) // Last 90 days
+  complaintPattern Json?     // Weekly pattern data
+  lastComplaint    DateTime?
+
+  // Review sentiment (Claude NLP)
+  reviewSentiment Json? // NLP analysis results
+
+  // Data freshness
+  dataLastFetched DateTime?
+
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  moods     VenueMood[]
 
   @@index([lat, lng])
+  @@index([meetingScore])
+  @@index([noiseComplaints])
   @@map("venues")
 }
 
