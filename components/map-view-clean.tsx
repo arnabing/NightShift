@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Mood } from "@/app/page";
-import { ArrowLeft, MapPin } from "lucide-react";
+import { ArrowLeft, MapPin, Layers } from "lucide-react";
 import type { Venue } from "@/lib/types";
-import { getScoreTier } from "@/lib/scoring";
+import { getScoreTier, calculateDynamicMeetingScore, type EnabledFactors, type VenueScoreData } from "@/lib/scoring";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import {
@@ -14,6 +14,8 @@ import {
   DrawerTitle,
   DrawerTrigger,
 } from "@/components/ui/drawer";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 
 interface MapViewProps {
   mood: Mood;
@@ -52,6 +54,14 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
   const [venues, setVenues] = useState<VenueWithScore[]>([]);
   const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [layerFilterOpen, setLayerFilterOpen] = useState(false);
+  const [enabledFactors, setEnabledFactors] = useState<EnabledFactors>({
+    genderBalance: true,
+    socialVibe: true,
+    quality: true,
+    socialibility: true,
+    activityLevel: true,
+  });
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const markers = useRef<mapboxgl.Marker[]>([]);
@@ -95,7 +105,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
     });
 
     map.current = newMap;
-    newMap.addControl(new mapboxgl.NavigationControl(), "top-right");
+    // Removed navigation controls - users know how to use a map
 
     return () => {
       map.current?.remove();
@@ -103,7 +113,30 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
     };
   }, []);
 
-  // Update markers when venues change
+  // Recalculate venue scores based on enabled factors
+  const getVenuesWithDynamicScores = () => {
+    return venues.map((venue) => {
+      // Convert venue to VenueScoreData format
+      const scoreData: VenueScoreData = {
+        venueType: venue.venueType,
+        rating: venue.rating,
+        noiseComplaints: venue.noiseComplaints,
+        genderRatio: venue.genderRatio as any,
+        reviewSentiment: venue.reviewSentiment as any,
+      };
+
+      // Calculate dynamic score based on enabled factors
+      const scoreBreakdown = calculateDynamicMeetingScore(scoreData, enabledFactors);
+
+      return {
+        ...venue,
+        meetingScore: scoreBreakdown.total,
+        scoreBreakdown,
+      };
+    });
+  };
+
+  // Update markers when venues or filters change
   useEffect(() => {
     if (!map.current || venues.length === 0) return;
 
@@ -111,18 +144,20 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
     markers.current.forEach((marker) => marker.remove());
     markers.current = [];
 
+    const venuesWithScores = getVenuesWithDynamicScores();
+
     // Add new markers with women emojis and minimal design
-    venues.forEach((venue) => {
+    venuesWithScores.forEach((venue) => {
       const tier = venue.meetingScore ? getScoreTier(venue.meetingScore) : null;
       const score = venue.meetingScore || 0;
 
       // Simple color scale for score badge
       let bgColor = "bg-gray-500"; // Default
-      if (score >= 80) {
+      if (score >= 8) {
         bgColor = "bg-purple-500"; // Elite/Excellent
-      } else if (score >= 70) {
+      } else if (score >= 7) {
         bgColor = "bg-blue-500"; // Good
-      } else if (score >= 60) {
+      } else if (score >= 6) {
         bgColor = "bg-cyan-500"; // Decent
       }
 
@@ -157,14 +192,14 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
     });
 
     // Fit map to show all markers
-    if (venues.length > 0) {
+    if (venuesWithScores.length > 0) {
       const bounds = new mapboxgl.LngLatBounds();
-      venues.forEach((venue) => {
+      venuesWithScores.forEach((venue) => {
         bounds.extend([venue.coordinates.lng, venue.coordinates.lat]);
       });
       map.current.fitBounds(bounds, { padding: 50, maxZoom: 13 });
     }
-  }, [venues]);
+  }, [venues, enabledFactors]);
 
   const getPriceSymbol = (level: number) => "$".repeat(level);
 
@@ -186,6 +221,81 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       >
         <ArrowLeft className="w-5 h-5 text-foreground" />
       </button>
+
+      {/* Layer filter button - Google Maps style */}
+      <div className="absolute top-4 right-4 z-50">
+        <button
+          onClick={() => setLayerFilterOpen(!layerFilterOpen)}
+          className="glass-light rounded-full p-3 hover:bg-white/90 transition-all shadow-lg"
+          style={{ pointerEvents: 'auto' }}
+        >
+          <Layers className="w-5 h-5 text-foreground" />
+        </button>
+
+        {/* Layer filter dropdown */}
+        {layerFilterOpen && (
+          <div className="absolute top-14 right-0 glass rounded-lg p-4 shadow-xl min-w-[260px]" style={{ pointerEvents: 'auto' }}>
+            <div className="space-y-3">
+              <div className="text-sm font-semibold text-foreground mb-3">Score Factors</div>
+
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  id="gender"
+                  checked={enabledFactors.genderBalance}
+                  onCheckedChange={(checked) => setEnabledFactors({ ...enabledFactors, genderBalance: !!checked })}
+                />
+                <Label htmlFor="gender" className="text-sm text-foreground cursor-pointer">
+                  Gender Demographics
+                </Label>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  id="vibe"
+                  checked={enabledFactors.socialVibe}
+                  onCheckedChange={(checked) => setEnabledFactors({ ...enabledFactors, socialVibe: !!checked })}
+                />
+                <Label htmlFor="vibe" className="text-sm text-foreground cursor-pointer">
+                  Social Atmosphere
+                </Label>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  id="quality"
+                  checked={enabledFactors.quality}
+                  onCheckedChange={(checked) => setEnabledFactors({ ...enabledFactors, quality: !!checked })}
+                />
+                <Label htmlFor="quality" className="text-sm text-foreground cursor-pointer">
+                  Quality Ratings
+                </Label>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  id="venueType"
+                  checked={enabledFactors.socialibility}
+                  onCheckedChange={(checked) => setEnabledFactors({ ...enabledFactors, socialibility: !!checked })}
+                />
+                <Label htmlFor="venueType" className="text-sm text-foreground cursor-pointer">
+                  Venue Type
+                </Label>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  id="activity"
+                  checked={enabledFactors.activityLevel}
+                  onCheckedChange={(checked) => setEnabledFactors({ ...enabledFactors, activityLevel: !!checked })}
+                />
+                <Label htmlFor="activity" className="text-sm text-foreground cursor-pointer">
+                  NYC 311 Activity
+                </Label>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Drawer component - slides up from bottom */}
       <Drawer open={drawerOpen} onOpenChange={(open) => {
@@ -211,9 +321,9 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
           </DrawerHeader>
 
           <div className="overflow-y-auto px-4 pb-8">
-            {/* Venue list sorted by score */}
+            {/* Venue list sorted by dynamic score */}
             <div className="grid gap-3">
-              {[...venues]
+              {getVenuesWithDynamicScores()
                 .sort((a, b) => (b.meetingScore || 0) - (a.meetingScore || 0))
                 .map((venue, index) => {
                   const tier = venue.meetingScore ? getScoreTier(venue.meetingScore) : null;
@@ -221,9 +331,9 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
 
                   // Badge color based on score - simple, minimal
                   let badgeColor = "bg-gray-100 text-gray-700";
-                  if (score >= 80) badgeColor = "bg-purple-500 text-white";
-                  else if (score >= 70) badgeColor = "bg-blue-500 text-white";
-                  else if (score >= 60) badgeColor = "bg-cyan-500 text-white";
+                  if (score >= 8) badgeColor = "bg-purple-500 text-white";
+                  else if (score >= 7) badgeColor = "bg-blue-500 text-white";
+                  else if (score >= 6) badgeColor = "bg-cyan-500 text-white";
 
                   return (
                     <button

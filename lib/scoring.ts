@@ -171,6 +171,17 @@ function calculateVibe(data: VenueScoreData): number {
 }
 
 /**
+ * Enabled factors for dynamic scoring
+ */
+export interface EnabledFactors {
+  genderBalance?: boolean;
+  socialVibe?: boolean;
+  quality?: boolean;
+  socialibility?: boolean;
+  activityLevel?: boolean;
+}
+
+/**
  * Calculate composite meeting potential score
  *
  * Weights (optimized for finding women):
@@ -205,6 +216,79 @@ export function calculateMeetingScore(data: VenueScoreData): ScoreBreakdown {
 }
 
 /**
+ * Calculate dynamic meeting score with toggleable factors
+ * Only includes enabled factors and normalizes to 0-100 scale
+ */
+export function calculateDynamicMeetingScore(
+  data: VenueScoreData,
+  enabledFactors: EnabledFactors = {
+    genderBalance: true,
+    socialVibe: true,
+    quality: true,
+    socialibility: true,
+    activityLevel: true,
+  }
+): ScoreBreakdown {
+  // Calculate individual scores
+  const genderBalance = calculateGenderBalance(data);
+  const activityLevel = calculateActivityLevel(data);
+  const socialibility = calculateSocialibility(data);
+  const quality = calculateQuality(data);
+  const vibe = calculateVibe(data);
+
+  // Base weights
+  const weights = {
+    genderBalance: 0.4,
+    socialVibe: 0.2,
+    quality: 0.15,
+    socialibility: 0.15,
+    activityLevel: 0.1,
+  };
+
+  // Calculate total score and total weight of enabled factors
+  let totalScore = 0;
+  let totalWeight = 0;
+
+  if (enabledFactors.genderBalance !== false) {
+    totalScore += genderBalance * weights.genderBalance;
+    totalWeight += weights.genderBalance;
+  }
+
+  if (enabledFactors.socialVibe !== false) {
+    totalScore += vibe * weights.socialVibe;
+    totalWeight += weights.socialVibe;
+  }
+
+  if (enabledFactors.quality !== false) {
+    totalScore += quality * weights.quality;
+    totalWeight += weights.quality;
+  }
+
+  if (enabledFactors.socialibility !== false) {
+    totalScore += socialibility * weights.socialibility;
+    totalWeight += weights.socialibility;
+  }
+
+  if (enabledFactors.activityLevel !== false) {
+    totalScore += activityLevel * weights.activityLevel;
+    totalWeight += weights.activityLevel;
+  }
+
+  // Normalize to 1-10 scale based on enabled factors
+  const normalized = totalWeight > 0 ? (totalScore / totalWeight) : 0;
+  const normalizedTotal = Math.max(1, Math.min(10, Math.round(normalized / 10)));
+
+  return {
+    total: normalizedTotal,
+    genderBalance: Math.round(genderBalance),
+    activityLevel: Math.round(activityLevel),
+    socialibility: Math.round(socialibility),
+    quality: Math.round(quality),
+    vibe: Math.round(vibe),
+  };
+}
+
+/**
  * Get score tier label with women emojis
  */
 export function getScoreTier(score: number): {
@@ -212,19 +296,19 @@ export function getScoreTier(score: number): {
   emoji: string;
   color: string;
 } {
-  if (score >= 90) {
+  if (score >= 9) {
     return { label: "Elite", emoji: "💃", color: "text-purple-400" }; // Dancing woman - best venues
   }
-  if (score >= 80) {
+  if (score >= 8) {
     return { label: "Excellent", emoji: "👯", color: "text-pink-400" }; // Women dancing - great spots
   }
-  if (score >= 70) {
+  if (score >= 7) {
     return { label: "Good", emoji: "🙋‍♀️", color: "text-blue-400" }; // Woman raising hand - solid choice
   }
-  if (score >= 60) {
+  if (score >= 6) {
     return { label: "Decent", emoji: "👩", color: "text-cyan-400" }; // Woman - okay option
   }
-  if (score >= 45) {
+  if (score >= 4) {
     return { label: "Mediocre", emoji: "🤷‍♀️", color: "text-gray-400" }; // Woman shrugging - meh
   }
   return { label: "Poor", emoji: "🚫", color: "text-red-400" }; // Not recommended
