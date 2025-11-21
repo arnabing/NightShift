@@ -121,11 +121,11 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
   // Recalculate venue scores based on enabled factors
   const getVenuesWithDynamicScores = () => {
     return venues.map((venue) => {
-      // Convert venue to VenueScoreData format
+      // Convert venue to VenueScoreData format (null to undefined conversion)
       const scoreData: VenueScoreData = {
-        venueType: venue.venueType,
-        rating: venue.rating,
-        noiseComplaints: venue.noiseComplaints,
+        venueType: venue.venueType ?? undefined,
+        rating: venue.rating ?? undefined,
+        noiseComplaints: venue.noiseComplaints ?? undefined,
         genderRatio: venue.genderRatio as any,
         reviewSentiment: venue.reviewSentiment as any,
       };
