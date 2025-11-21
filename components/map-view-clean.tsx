@@ -22,15 +22,15 @@ interface MapViewProps {
   onBack: () => void;
 }
 
-interface Venue extends PrismaVenue {
+interface Venue extends Omit<PrismaVenue, 'meetingScore'> {
   coordinates: {
     lat: number;
     lng: number;
   };
+  meetingScore?: number;
 }
 
 interface VenueWithScore extends Venue {
-  meetingScore?: number;
   scoreBreakdown?: {
     total: number;
     genderBalance: number;
