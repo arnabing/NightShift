@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Mood } from "@/app/page";
 import { ArrowLeft, MapPin, Layers } from "lucide-react";
-import type { Venue } from "@/lib/types";
+import type { Venue as PrismaVenue } from "@prisma/client";
 import { getScoreTier, calculateDynamicMeetingScore, type EnabledFactors, type VenueScoreData } from "@/lib/scoring";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -22,6 +22,13 @@ interface MapViewProps {
   onBack: () => void;
 }
 
+interface Venue extends PrismaVenue {
+  coordinates: {
+    lat: number;
+    lng: number;
+  };
+}
+
 interface VenueWithScore extends Venue {
   meetingScore?: number;
   scoreBreakdown?: {
@@ -37,8 +44,6 @@ interface VenueWithScore extends Venue {
     confidence: number;
     bestTime?: string;
   };
-  noiseComplaints?: number;
-  lastComplaint?: Date;
 }
 
 const moodLabels = {
