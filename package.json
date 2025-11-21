@@ -16,7 +16,10 @@
     "fetch:yelp": "tsx scripts/data-collection/fetch-yelp.ts",
     "fetch:google": "tsx scripts/data-collection/fetch-google-places.ts",
     "fetch:foursquare": "tsx scripts/data-collection/fetch-foursquare.ts",
-    "data:collect": "npm run fetch:google && npm run fetch:foursquare && npm run fetch:yelp && npm run fetch:311"
+    "fetch:eventbrite": "tsx scripts/data-collection/fetch-eventbrite.ts",
+    "import:cabaret": "tsx scripts/data-collection/import-cabaret-licenses.ts",
+    "fetch:live": "npm run fetch:eventbrite",
+    "data:collect": "npm run fetch:google && npm run fetch:foursquare && npm run fetch:yelp && npm run fetch:311 && npm run fetch:eventbrite"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

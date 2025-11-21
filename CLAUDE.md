@@ -69,66 +69,98 @@ NYC's 311 Open Data portal provides free, unlimited access to citizen noise comp
 
 ---
 
-## Data Strategy - Activity Hotspot Intelligence
+## Data Strategy v2.0 - Live Intelligence First
 
 ### Core Philosophy
-**Combine multiple real-time and historical signals to show users where fun activity is happening RIGHT NOW.**
+**Answer "Where should I go RIGHT NOW?" not "What's the algorithmic score?"**
 
-### Data Sources (Priority Order)
+We prioritize **live signals** (events happening tonight, current busyness) over **historical patterns** (review analysis, complaint patterns).
 
-#### TIER 1: Foundation (Already Built - FREE)
+### Three-Tier Data Approach
 
-1. **NYC 311 Noise Complaints** (FREE - Scripts exist!)
-   - **What it tells us**: Real activity happening at venues
+#### TIER 1: Live Signals (What's Happening NOW) 🔴
+
+1. **Eventbrite API** (FREE)
+   - **What it tells us**: Ladies nights, singles mixers, DJ parties happening TONIGHT
+   - **API**: `https://www.eventbriteapi.com/v3/events/search/`
+   - **Rate Limit**: 1,000 requests/hour
+   - **Update Frequency**: Daily at 6 PM
+   - **Impact**: HIGH - Tells users exactly when to go
+   - **Cost**: FREE
+   - **To implement**: `scripts/data-collection/fetch-eventbrite.ts`
+
+2. **Google Places Popular Times** (FREE)
+   - **What it tells us**: "Busy right now" live indicator
+   - **API**: Part of Place Details API
+   - **Update Frequency**: Real-time on map load
+   - **Impact**: HIGH - Shows current activity
+   - **Cost**: FREE (within existing $200/mo credit)
+   - **To implement**: Add `opening_hours` field to existing Google fetcher
+
+#### TIER 2: Historical Activity Patterns (What Usually Happens) ✅
+
+3. **NYC 311 Noise Complaints** (FREE - Already Built!)
+   - **What it tells us**: Predictable weekend activity patterns
    - **API**: `https://data.cityofnewyork.us/resource/erm2-nwe9.json`
-   - **Rate Limit**: 10,000/hour with free app token
+   - **Rate Limit**: 10,000/hour (50,000 with app token)
    - **Update Frequency**: Weekly
-   - **Scripts**: `scripts/data-collection/fetch-311-complaints.ts`
-   - **Key Insight**: Consistent complaints = predictable activity hotspots
+   - **Impact**: MEDIUM - Predicts busy nights
+   - **Scripts**: ✅ `scripts/data-collection/fetch-311-complaints.ts`
+   - **Key Insight**: Consistent complaints = predictable hotspots
 
-2. **NYS Liquor Authority Database** (FREE - Script exists!)
-   - **What it tells us**: Complete authoritative list of ALL bars/clubs in NYC
-   - **API**: `https://data.ny.gov/resource/9s3h-dpkz.json`
-   - **Rate Limit**: 10,000/hour
-   - **Update Frequency**: Monthly
-   - **Scripts**: `scripts/data-collection/fetch-nys-liquor.ts`
-   - **Coverage**: ~10,000 licensed venues in NYC
+#### TIER 3: Review Intelligence (Gender & Vibe Signals) ✅
 
-#### TIER 2: Activity Intelligence (Week 1 - FREE + PAID)
+4. **Google Places API** (FREE - Already Built!)
+   - **What it tells us**: Gender keywords, vibe analysis, ratings
+   - **API**: `https://maps.googleapis.com/maps/api/place`
+   - **Rate Limit**: 1,000 QPS
+   - **Coverage**: ~50% of venues have useful reviews
+   - **Impact**: HIGH - Best gender ratio inference
+   - **Cost**: ~$1-2 per 25 venues
+   - **Scripts**: ✅ `scripts/data-collection/fetch-google-places.ts`
 
-3. **Yelp Fusion API** (FREE)
-   - **What it tells us**: Gender mentions, dating atmosphere, social vibe from reviews
+5. **Yelp Fusion API** (FREE - Already Built!)
+   - **What it tells us**: Ratings, categories (no review text via API)
+   - **API**: `https://api.yelp.com/v3/businesses/search`
    - **Free tier**: 5,000 calls/day
    - **Rate Limit**: 5 QPS
-   - **Update Frequency**: Weekly for historical data
-   - **Cost**: FREE
-   - **To implement**: `scripts/data-collection/fetch-yelp.ts`
+   - **Impact**: LOW - Backup ratings only
+   - **Scripts**: ✅ `scripts/data-collection/fetch-yelp.ts`
 
-4. **BestTime.app** (PAID - Best for live activity)
-   - **What it tells us**: Real-time foot traffic, live "busyness percentage", predicted activity
-   - **Why better than Google**: More accurate, cheaper, foot-traffic focused
-   - **Update Frequency**: Real-time on map load, weekly for historical patterns
-   - **Cost**: ~$200/month for 10K queries (free tier available)
-   - **Alternative**: Google Places Popular Times (~$20/month)
-   - **To implement**: `scripts/data-collection/fetch-besttime.ts`
+6. **Foursquare API** (FREE - Ready!)
+   - **What it tells us**: User tips (review text), popularity scores
+   - **API**: `https://api.foursquare.com/v3/places/search`
+   - **Free tier**: 950 calls/day
+   - **Impact**: MEDIUM - Alternative to Google reviews
+   - **Scripts**: ✅ `scripts/data-collection/fetch-foursquare.ts` (need API key)
 
-5. **Eventbrite API** (FREE)
-   - **What it tells us**: Ladies nights, singles mixers, party events happening tonight
-   - **Update Frequency**: Daily scrape
-   - **Cost**: FREE
-   - **To implement**: `scripts/data-collection/fetch-events.ts`
+#### TIER 4: Static Validation (One-Time Imports)
 
-#### TIER 3: Enhanced Signals (Week 2-3 - FREE)
+7. **NYC Cabaret License Data** (FREE)
+   - **What it tells us**: Which venues legally have dancing/entertainment
+   - **API**: `https://data.cityofnewyork.us/resource/n5mv-niye.json`
+   - **Update Frequency**: Monthly
+   - **Impact**: LOW - Validates "dance" mood venues
+   - **To implement**: `scripts/data-collection/import-cabaret-licenses.ts`
 
-6. **Ticketmaster API** (FREE)
-   - Concerts, sports events, entertainment drawing crowds
-
-7. **NYC Open Data** (FREE)
-   - Street fairs, public events, festivals
+#### TIER 5: AI Enhancement (Future - Phase 3)
 
 8. **Claude API (Anthropic)** (SMALL COST)
-   - NLP analysis of reviews for gender ratios and social vibe
-   - Cost: ~$3 per 1M input tokens (~$5-10 one-time for 200 venues)
+   - **What it tells us**: Structured gender/vibe/age data from reviews
+   - **Cost**: ~$5 one-time for 200 venues (Claude Haiku)
+   - **To implement**: `scripts/ai/analyze-reviews.ts`
+
+9. **Google Places AI Summaries** (EXPERIMENTAL)
+   - **What it tells us**: AI-generated venue descriptions
+   - **Status**: Beta access only
+   - **Cost**: ~$40/month minimum (Advanced tier)
+   - **Timeline**: When broadly available
+
+### Deprecated/Removed Sources
+
+- ~~BestTime.app~~ - Too expensive ($200/mo) when 311 data + Google Popular Times work
+- ~~Scraping~~ - Against ToS, not scalable
+- ~~Instagram/TikTok~~ - Requires scraping
 
 ---
 
@@ -424,21 +456,51 @@ model CheckIn {
 # Database
 DATABASE_URL=postgresql://...
 
-# Mapbox (geocoding + future map view)
+# Mapbox (for map display)
 NEXT_PUBLIC_MAPBOX_TOKEN=pk.ey...
 
-# Yelp
+# Google Places API (reviews, ratings, popular times)
+NEXT_PUBLIC_GOOGLE_PLACES_API_KEY=your_key_here
+GOOGLE_PLACES_API_KEY=your_key_here  # Server-side
+
+# Eventbrite API (events happening tonight)
+EVENTBRITE_API_KEY=your_bearer_token
+
+# Yelp Fusion API (backup ratings)
 YELP_API_KEY=your_key_here
 
-# Foursquare
+# Foursquare API (venue tips)
 FOURSQUARE_API_KEY=your_key_here
 
-# Claude (Anthropic)
-ANTHROPIC_API_KEY=sk-ant-...
-
-# NYC Open Data (optional, for higher rate limits)
+# NYC Open Data (optional - for higher rate limits on 311/cabaret data)
 NYC_OPEN_DATA_APP_TOKEN=your_token
+
+# Claude API - Future Phase 3 (review analysis)
+ANTHROPIC_API_KEY=sk-ant-...
 ```
+
+### Getting API Keys
+
+**Eventbrite** (High Priority):
+1. Go to https://www.eventbrite.com/platform/api
+2. Create a new app
+3. Generate your personal OAuth token
+4. Add to `.env.local`
+
+**Google Places** (Already Have):
+1. Go to https://console.cloud.google.com/
+2. Enable Places API (New)
+3. Create API key with Places API restrictions
+
+**NYC Open Data** (Optional but Recommended):
+1. Go to https://data.cityofnewyork.us/profile/edit/developer_settings
+2. Create an app token
+3. Increases rate limit from 1,000/day to 50,000/day
+
+**Foursquare** (if not already set):
+1. Go to https://foursquare.com/developers/
+2. Create a new app
+3. Get your API key
 
 ---
 

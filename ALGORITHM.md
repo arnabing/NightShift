@@ -1,6 +1,6 @@
 # NightShift Meeting Potential Algorithm
 
-**Last Updated:** January 2025
+**Last Updated:** Nov 2025
 **Version:** 1.0 (Beta)
 
 ## 🎯 Goal
@@ -272,62 +272,194 @@ Activity: 0% (REMOVED)
 
 ---
 
-## 📊 Data Sources
+## 📊 Data Sources (v2.0)
 
-### Currently Implemented ✅
+### Core Philosophy: Live Intelligence Over Historical Guessing
 
-1. **Google Places API** ($1.02 for 25 venues) - PRIMARY SOURCE
-   - Reviews with full text for gender analysis
-   - 13/25 venues matched
-   - Up to 5 reviews per venue
-   - Best source for gender keywords
+**Goal:** Answer "Where should I go RIGHT NOW?" not "What's the algorithmic score?"
+
+We prioritize **live signals** (what's happening tonight) over **historical patterns** (what usually happens).
+
+---
+
+### Tier 1: Live Activity Signals 🔴 PRIORITY
+
+#### 1. **Eventbrite API** (Free - 1,000 req/hour) - LIVE EVENTS
+   - **What it tells us:** Ladies nights, singles mixers, DJ parties happening TONIGHT
+   - **Update frequency:** Daily check at 6 PM
+   - **Coverage:** ~30-40% of venues will have events
+   - **Impact:** HIGH - Tells users exactly when to go
+   - **Status:** 🔄 Implementing now
+   - **Cost:** FREE
+
+#### 2. **Google Places Popular Times** (Free) - BUSYNESS
+   - **What it tells us:** "Busy right now" live indicator
+   - **Update frequency:** Real-time on map load
+   - **Coverage:** Most venues with Google listings
+   - **Impact:** HIGH - Shows current activity
+   - **Status:** 🔄 Implementing now
+   - **Cost:** FREE (within existing Google API quota)
+
+---
+
+### Tier 2: Historical Activity Patterns ✅ WORKING
+
+#### 3. **NYC 311 Noise Complaints** (Free) - ACTIVITY PROXY
+   - **What it tells us:** Predictable weekend activity patterns
+   - **Data points:** Last 90 days of complaints, peak hours, consistency
+   - **Coverage:** 7/25 test venues, expanding to all NYC bars
+   - **Impact:** MEDIUM - Predicts busy nights
    - **Status:** ✅ Working
+   - **Cost:** FREE
 
-2. **Foursquare API** (Free - 950 calls/day) - SUPPLEMENTAL
-   - Venue tips (user-generated content)
-   - Alternative review source
-   - Smart update: only overwrites if better data
-   - **Status:** 🔄 Ready to run (need API key)
+---
 
-3. **Yelp Fusion API** (Free - 5,000 calls/day) - BACKUP
-   - Business ratings and categories
-   - 6/25 venues matched
-   - No review text (API restricted)
-   - Used for backup ratings only
+### Tier 3: Review Intelligence ✅ WORKING
+
+#### 4. **Google Places API** (Free tier) - PRIMARY REVIEWS
+   - **What it tells us:** Gender keywords, vibe analysis, ratings
+   - **Coverage:** 13/25 test venues matched, ~5 reviews per venue
+   - **Impact:** HIGH - Best gender ratio inference
    - **Status:** ✅ Working
+   - **Cost:** ~$1-2 for 25 venues (within free tier)
 
-4. **NYC 311 Open Data** (Free) - ACTIVITY PROXY
-   - Noise complaints in last 90 days
-   - 7/25 venues with data
-   - Not reliable proxy for busyness
-   - Weighted at only 10%
+#### 5. **Yelp Fusion API** (Free - 5,000 calls/day) - BACKUP
+   - **What it tells us:** Ratings, categories, business status
+   - **Coverage:** 6/25 test venues
+   - **Impact:** LOW - No review text via API
    - **Status:** ✅ Working
+   - **Cost:** FREE
 
-### Missing Data Sources 🔴
+#### 6. **Foursquare API** (Free - 950 calls/day) - TIPS
+   - **What it tells us:** User tips, venue categories
+   - **Coverage:** Good coverage in NYC
+   - **Impact:** MEDIUM - Alternative to Google reviews
+   - **Status:** 🔄 Ready (need API key)
+   - **Cost:** FREE
 
-5. **Real-Time Foot Traffic**
-   - Google Popular Times (free but hard to access)
-   - BestTime.app ($20/month)
-   - Alternative: Instagram check-ins?
-   - **Status:** ❌ Not implemented
+---
 
-6. **Events Calendar**
-   - Eventbrite API (ladies nights, mixers)
-   - Venue websites (weekly schedules)
-   - Instagram/social media scraping
-   - **Status:** ❌ Not implemented
+### Tier 4: Static Validation Data ✅ ONE-TIME IMPORT
+
+#### 7. **NYC Cabaret License Data** (Free) - DANCE VALIDATION
+   - **What it tells us:** Which venues legally have dancing/entertainment
+   - **Update frequency:** Monthly
+   - **Coverage:** All licensed venues
+   - **Impact:** LOW - Validates "dance" mood venues
+   - **Status:** 🔄 Importing now
+   - **Cost:** FREE
+
+---
+
+### Tier 5: AI Enhancement (Future Phase) 🚀
+
+#### 8. **Google Places AI Summaries** (Experimental)
+   - **What it tells us:** AI-generated venue descriptions
+   - **Status:** ❌ Not available yet (beta access required)
+   - **Cost:** ~$40/month minimum (Advanced tier)
+   - **Timeline:** Phase 3 (when broadly available)
+
+#### 9. **Claude API (Anthropic)** - REVIEW ANALYSIS
+   - **What it tells us:** Structured gender/vibe/age data from reviews
+   - **Status:** ❌ Not implemented yet
+   - **Cost:** ~$5 one-time for 200 venues (Claude Haiku)
+   - **Timeline:** Phase 3
+
+---
+
+## 🚀 New Simplified Approach: Signal-Based Intelligence
+
+### The Problem with v1.0
+- ❌ Complex 5-factor weighted algorithm
+- ❌ Missing data caused bad scores
+- ❌ Users don't care about "socialibility score"
+- ❌ Over-engineered for sparse data
+
+### The v2.0 Solution: Show What We Know
+
+**Instead of calculating a "meeting potential score", we show live intelligence:**
+
+```typescript
+interface VenueIntelligence {
+  // 🔴 LIVE (what's happening RIGHT NOW)
+  hasEventTonight: boolean;
+  eventName?: string;               // "Ladies Night"
+  eventTime?: string;               // "9 PM - 2 AM"
+  currentBusyness?: number;         // 0-100 (Google Popular Times)
+
+  // 📊 HISTORICAL (patterns from data)
+  weekendActivity: number;          // 0-100 (from 311 data)
+  peakHours: string[];              // ["10 PM", "11 PM", "12 AM"]
+  consistencyScore: number;         // How reliable is this pattern?
+
+  // ⭐ QUALITY (venue characteristics)
+  rating: number;                   // 4.7 stars
+  venueType: string;                // "Cocktail Bar"
+  priceLevel: number;               // 1-4 ($-$$$$)
+
+  // 👯 GENDER (from review analysis - when available)
+  genderRatio?: {
+    female: number;
+    confidence: "high" | "medium" | "low";
+  };
+
+  // 🎯 AI INSIGHTS (future)
+  vibe?: string;                    // "Upscale", "Casual"
+  ageRange?: string;                // "20s-30s"
+  crowdDescription?: string;        // AI summary
+
+  // 📈 CONFIDENCE
+  dataQuality: number;              // 0-100 (how much do we know?)
+}
+```
+
+### Simple Scoring Logic
+
+```typescript
+function shouldIGoHere(intel: VenueIntelligence): string {
+  // LIVE SIGNAL = instant recommendation
+  if (intel.hasEventTonight && intel.eventName?.includes("ladies")) {
+    return "🎉 GO NOW - Ladies night tonight!";
+  }
+
+  if (intel.currentBusyness > 75) {
+    return "🔥 GO NOW - Busy right now!";
+  }
+
+  // HISTORICAL + QUALITY
+  if (intel.weekendActivity > 70 && intel.rating > 4.5) {
+    return "✨ Usually great on weekends";
+  }
+
+  // GENDER SIGNAL (if we have it)
+  if (intel.genderRatio && intel.genderRatio.female > 50) {
+    return "👯 Good gender balance";
+  }
+
+  // DEFAULT
+  return "📍 Solid option";
+}
+```
+
+---
 
 ### Data Collection Commands
 
 ```bash
-# Run all data sources in sequence (recommended order)
-npm run data:collect
+# NEW: Fetch all live signals
+npm run fetch:live          # Eventbrite events + Google busyness
 
-# Or run individually:
-npm run fetch:google      # Google Places (primary)
-npm run fetch:foursquare  # Foursquare (supplemental)
-npm run fetch:yelp        # Yelp (backup ratings)
-npm run fetch:311         # NYC 311 complaints
+# Historical patterns
+npm run fetch:311           # NYC 311 complaints
+npm run fetch:google        # Google Places reviews
+npm run fetch:yelp          # Yelp ratings
+npm run fetch:foursquare    # Foursquare tips
+
+# One-time imports
+npm run import:cabaret      # NYC cabaret licenses
+
+# Run everything
+npm run data:collect        # Runs all scripts in optimal order
 ```
 
 ---

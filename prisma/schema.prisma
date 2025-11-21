@@ -41,6 +41,20 @@ model Venue {
   // Review sentiment (Claude NLP)
   reviewSentiment Json? // NLP analysis results
 
+  // Live event data (Eventbrite)
+  events Json? // Tonight's events {eventName, eventUrl, eventTime, eventType}
+
+  // NYC Cabaret licenses (static validation)
+  cabaretLicense     Boolean? @default(false)
+  cabaretLicenseType String?  // "Class 1 Cabaret", "Class 2 Cabaret"
+
+  // Google Popular Times (future)
+  popularTimes Json? // Hourly busyness patterns
+
+  // AI-generated insights (future Phase 3)
+  aiSummary    Json? // Google AI summary
+  aiParsedData Json? // Claude-extracted structured data
+
   // Data freshness
   dataLastFetched DateTime?
 
