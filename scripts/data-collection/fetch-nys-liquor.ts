@@ -216,9 +216,9 @@ async function importVenuesFromLicenses() {
     // Rate limiting: wait 200ms between geocoding requests
     await new Promise((resolve) => setTimeout(resolve, 200));
 
-    // Limit to 100 new venues for MVP
-    if (imported >= 100) {
-      console.log("\n⚠️  Reached import limit of 100 venues");
+    // Limit to 1500 new venues for full NYC coverage
+    if (imported >= 1500) {
+      console.log("\n⚠️  Reached import limit of 1500 venues");
       break;
     }
   }

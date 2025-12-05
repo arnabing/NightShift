@@ -1,82 +1,117 @@
-# NightShift Data Pipeline v2.0
+# NightShift Data Pipeline v3.0
 
-**Last Updated:** November 2025
+**Last Updated:** November 2025 - OpenAI Integration
 
 ## 🎯 What Changed
 
-We shifted from a complex weighted algorithm to a **live intelligence** approach that answers: **"Where should I go RIGHT NOW?"**
+We shifted from a complex weighted algorithm to an **LLM-powered intelligence** approach that answers: **"Where should I go to meet women?"**
 
 ### Before (v1.0):
 - ❌ Complex 5-factor weighted score
 - ❌ Missing data caused bad scores
+- ❌ Simple keyword matching ("girl" vs "guy")
 - ❌ Users didn't understand "socialibility score"
-- ❌ No live signals, only historical data
 
 ### After (v2.0):
-- ✅ Live event signals (ladies nights, mixers)
-- ✅ Show what we KNOW, not what we guess
-- ✅ Simple intelligence cards instead of complex scores
-- ✅ Real-time + historical patterns
+- ❌ Attempted live event signals (Eventbrite deprecated)
+- ❌ Attempted cabaret licenses (no GPS data)
+- ✅ Reality check: Most APIs don't exist or cost money
+
+### After (v3.0 - Current):
+- ✅ **OpenAI-powered review analysis** ($0.60 per 1,000 venues!)
+- ✅ Structured data extraction (gender ratio, age, vibe, timing)
+- ✅ Show what we KNOW with confidence levels
+- ✅ Scale to 1,500+ venues with NYS Liquor Authority data
 
 ---
 
-## 📊 New Data Sources Implemented
+## 📊 Data Sources v3.0
 
-### 1. Eventbrite API (LIVE SIGNALS) 🔴
-**Script:** `scripts/data-collection/fetch-eventbrite.ts`
+### 1. OpenAI Review Analysis (LLM INTELLIGENCE) 🤖 ✅ IMPLEMENTED
+**Script:** `scripts/ai/analyze-reviews-openai.ts`
 
 **What it does:**
-- Searches for nightlife events happening tonight (9 PM - 4 AM)
-- Finds ladies nights, singles mixers, DJ parties
-- Matches events to venues by GPS coordinates (within 50m)
-- Stores in venue `events` field
+- Analyzes venue reviews using OpenAI gpt-4o-mini
+- Extracts structured data: gender ratio, age range, social vibe, meeting potential
+- Provides confidence levels for all estimates
+- Stores in venue `aiParsedData` field
+- Updates `genderRatio`, `meetingScore`, `socialibilityScore` fields
 
 **How to run:**
 ```bash
-npm run fetch:eventbrite
+# Analyze all venues with reviews
+npm run analyze:openai
+
+# Test on first 10 venues
+npm run analyze:openai -- --limit 10 --test
+
+# Analyze specific venues
+npm run analyze:openai -- --ids venue1,venue2,venue3
 ```
 
 **Required env var:**
 ```bash
-EVENTBRITE_API_KEY=your_bearer_token
+OPENAI_API_KEY=sk-proj-...
 ```
 
 **Get API key:**
-1. Go to https://www.eventbrite.com/platform/api
-2. Create a new app
-3. Generate personal OAuth token
+1. Go to https://platform.openai.com/api-keys
+2. Create a new secret key
+3. Add to `.env.local`
 
-**Event types detected:**
-- 🎉 Ladies Night
-- 💕 Singles Mixer
-- 💃 Dance Party
-- 🎵 Live Music
-- 🎊 Party
+**Cost:**
+- **$0.0006 per venue**
+- 1,000 venues = $0.60
+- 10,000 venues = $6.00
+
+**Output structure:**
+```json
+{
+  "genderRatio": {
+    "estimatedFemalePercent": 55,
+    "estimatedMalePercent": 45,
+    "confidence": "high",
+    "reasoning": "Multiple reviews mention balanced crowd..."
+  },
+  "socialVibe": {
+    "overallScore": 85,
+    "isDateFriendly": true,
+    "conversationFriendly": true,
+    "crowdDescription": "young professionals",
+    "ageRange": "20s-30s"
+  },
+  "meetingPotential": {
+    "score": 78,
+    "bestNights": ["Friday", "Saturday"],
+    "bestTimeOfNight": "10PM-midnight",
+    "prosForMeeting": ["Good gender balance", "Easy to talk"],
+    "consForMeeting": ["Can get crowded after midnight"]
+  }
+}
+```
 
 ---
 
-### 2. NYC Cabaret Licenses (VALIDATION)
-**Script:** `scripts/data-collection/import-cabaret-licenses.ts`
+### 2. NYS Liquor Authority Database (VENUE DISCOVERY) 🍺 ✅ WORKING
+**Script:** `scripts/data-collection/fetch-nys-liquor.ts`
 
 **What it does:**
-- One-time/monthly import of NYC cabaret licenses
-- Identifies venues with legal dancing/entertainment permits
-- Validates "dance" mood venues
-- Stores in `cabaretLicense` and `cabaretLicenseType` fields
+- Imports all active NYC bars/nightclubs from NY State Liquor Authority
+- Filters for nightlife licenses (On Premises, Club, Tavern, Restaurant)
+- Geocodes addresses using Mapbox API
+- Can import up to 1,500 venues (recently increased from 100)
 
 **How to run:**
 ```bash
-npm run import:cabaret
+npm run fetch:liquor
 ```
 
-**Optional env var (for higher rate limits):**
-```bash
-NYC_OPEN_DATA_APP_TOKEN=your_token
-```
+**Coverage:**
+- Manhattan, Brooklyn, Queens, Bronx, Staten Island
+- ~10,000 active liquor licenses in NYC
+- Script limit: 1,500 venues (configurable)
 
-**License types:**
-- **Class 1 Cabaret:** Full entertainment + dancing (best for dance venues)
-- **Class 2 Cabaret:** DJ/recorded music only
+**Cost:** FREE (both NYS API and Mapbox within free tier)
 
 ---
 
@@ -85,19 +120,21 @@ NYC_OPEN_DATA_APP_TOKEN=your_token
 **New fields added to `Venue` model:**
 
 ```prisma
-// Live event data (Eventbrite)
-events Json? // Tonight's events {eventName, eventUrl, eventTime, eventType}
+// OpenAI-generated insights (v3.0) ✅ IN USE
+aiParsedData Json? // Structured review analysis from OpenAI
+// Stores: genderRatio, socialVibe, meetingPotential objects
 
-// NYC Cabaret licenses (static validation)
-cabaretLicense     Boolean? @default(false)
-cabaretLicenseType String?  // "Class 1 Cabaret", "Class 2 Cabaret"
+// Enhanced scoring fields (populated by OpenAI)
+meetingScore       Float?  // 0-100 composite score
+socialibilityScore Float?  // 0-100 from OpenAI analysis
+avgAge             Int?    // Estimated from age range
+reviewSentiment    Json?   // Enriched with OpenAI insights
 
-// Google Popular Times (future)
-popularTimes Json? // Hourly busyness patterns
-
-// AI-generated insights (future Phase 3)
-aiSummary    Json? // Google AI summary
-aiParsedData Json? // Claude-extracted structured data
+// Legacy/deprecated fields (kept for backwards compatibility)
+events             Json?   // Eventbrite (deprecated - API removed 2020)
+cabaretLicense     Boolean? @default(false) // NYC data lacks GPS coords
+popularTimes       Json?   // Google doesn't expose this
+aiSummary          Json?   // Google AI summaries (not publicly available)
 ```
 
 **To apply schema changes:**
@@ -107,24 +144,41 @@ npm run db:push
 
 ---
 
-## 🚀 New NPM Scripts
+## 🚀 NPM Scripts (v3.0)
 
 ```bash
-# NEW: Fetch live event data
-npm run fetch:eventbrite    # Eventbrite events for tonight
-npm run fetch:live           # Alias for fetch:eventbrite
+# Venue Discovery
+npm run fetch:liquor         # Import bars from NYS Liquor Authority (1,500 venues)
 
-# NEW: Import static data
-npm run import:cabaret       # NYC cabaret licenses (run once/month)
+# Data Enrichment
+npm run fetch:google         # Google Places reviews + ratings
+npm run fetch:311            # NYC 311 noise complaints (activity proxy)
+npm run fetch:foursquare     # Foursquare venue tips
+npm run fetch:yelp           # Yelp ratings (backup)
 
-# UPDATED: Collect all data
-npm run data:collect         # Runs all data sources including Eventbrite
+# AI Analysis ✨ NEW
+npm run analyze:openai       # OpenAI review analysis (LLM intelligence)
 
-# Existing scripts still work
-npm run fetch:google         # Google Places reviews
-npm run fetch:yelp           # Yelp ratings
-npm run fetch:311            # NYC 311 complaints
-npm run fetch:foursquare     # Foursquare tips
+# Full Pipeline
+npm run data:collect         # Run all steps: liquor → 311 → google → foursquare → yelp → openai
+```
+
+**Typical workflow:**
+```bash
+# 1. Import venues (one-time or monthly)
+npm run fetch:liquor
+
+# 2. Enrich with review data
+npm run fetch:google
+
+# 3. Add activity patterns
+npm run fetch:311
+
+# 4. Optional: Add Foursquare tips
+npm run fetch:foursquare
+
+# 5. Run AI analysis (the magic!)
+npm run analyze:openai
 ```
 
 ---

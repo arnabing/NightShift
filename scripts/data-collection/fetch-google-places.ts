@@ -360,6 +360,7 @@ async function fetchGooglePlacesData() {
           maleKeywords: genderAnalysis.maleKeywords,
           femaleKeywords: genderAnalysis.femaleKeywords,
           reviewCount: googlePlace.user_ratings_total || 0,
+          reviewTexts: reviews.map(r => r.text), // Save review text for LLM analysis
         },
         reviewSentiment: {
           socialVibeScore: vibeAnalysis.socialVibeScore,

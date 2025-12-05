@@ -16,10 +16,8 @@
     "fetch:yelp": "tsx scripts/data-collection/fetch-yelp.ts",
     "fetch:google": "tsx scripts/data-collection/fetch-google-places.ts",
     "fetch:foursquare": "tsx scripts/data-collection/fetch-foursquare.ts",
-    "fetch:eventbrite": "tsx scripts/data-collection/fetch-eventbrite.ts",
-    "import:cabaret": "tsx scripts/data-collection/import-cabaret-licenses.ts",
-    "fetch:live": "npm run fetch:eventbrite",
-    "data:collect": "npm run fetch:google && npm run fetch:foursquare && npm run fetch:yelp && npm run fetch:311 && npm run fetch:eventbrite"
+    "analyze:openai": "tsx scripts/ai/analyze-reviews-openai.ts",
+    "data:collect": "npm run fetch:liquor && npm run fetch:311 && npm run fetch:google && npm run fetch:foursquare && npm run fetch:yelp && npm run analyze:openai"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -51,6 +49,7 @@
     "lucide-react": "^0.554.0",
     "mapbox-gl": "^3.16.0",
     "next": "^16.0.3",
+    "openai": "^6.9.1",
     "postcss": "^8.5.6",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

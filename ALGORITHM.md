@@ -272,98 +272,109 @@ Activity: 0% (REMOVED)
 
 ---
 
-## 📊 Data Sources (v2.0)
+## 📊 Data Sources (v2.1 - Reality Check)
 
-### Core Philosophy: Live Intelligence Over Historical Guessing
+### Core Philosophy: Show What We KNOW, Not What We Guess
 
-**Goal:** Answer "Where should I go RIGHT NOW?" not "What's the algorithmic score?"
+**Reality:** Most "live" APIs don't exist or cost money. We focus on high-quality review intelligence + historical patterns.
 
-We prioritize **live signals** (what's happening tonight) over **historical patterns** (what usually happens).
-
----
-
-### Tier 1: Live Activity Signals 🔴 PRIORITY
-
-#### 1. **Eventbrite API** (Free - 1,000 req/hour) - LIVE EVENTS
-   - **What it tells us:** Ladies nights, singles mixers, DJ parties happening TONIGHT
-   - **Update frequency:** Daily check at 6 PM
-   - **Coverage:** ~30-40% of venues will have events
-   - **Impact:** HIGH - Tells users exactly when to go
-   - **Status:** 🔄 Implementing now
-   - **Cost:** FREE
-
-#### 2. **Google Places Popular Times** (Free) - BUSYNESS
-   - **What it tells us:** "Busy right now" live indicator
-   - **Update frequency:** Real-time on map load
-   - **Coverage:** Most venues with Google listings
-   - **Impact:** HIGH - Shows current activity
-   - **Status:** 🔄 Implementing now
-   - **Cost:** FREE (within existing Google API quota)
+**Goal:** Accurately predict "Where are women tonight?" using the best available free data sources.
 
 ---
 
-### Tier 2: Historical Activity Patterns ✅ WORKING
+### Tier 1: Review Intelligence 🎯 PRIMARY SOURCE
 
-#### 3. **NYC 311 Noise Complaints** (Free) - ACTIVITY PROXY
-   - **What it tells us:** Predictable weekend activity patterns
-   - **Data points:** Last 90 days of complaints, peak hours, consistency
-   - **Coverage:** 7/25 test venues, expanding to all NYC bars
-   - **Impact:** MEDIUM - Predicts busy nights
-   - **Status:** ✅ Working
-   - **Cost:** FREE
-
----
-
-### Tier 3: Review Intelligence ✅ WORKING
-
-#### 4. **Google Places API** (Free tier) - PRIMARY REVIEWS
-   - **What it tells us:** Gender keywords, vibe analysis, ratings
-   - **Coverage:** 13/25 test venues matched, ~5 reviews per venue
+#### 1. **Google Places API** (Free tier) ✅ WORKING
+   - **What it tells us:** Gender keywords, vibe analysis, ratings, venue type
+   - **Current:** Simple keyword matching (91% female at Doc Holliday's)
+   - **Next step:** LLM analysis for deeper insights
+   - **Coverage:** 13/25 venues matched, need to expand
    - **Impact:** HIGH - Best gender ratio inference
-   - **Status:** ✅ Working
-   - **Cost:** ~$1-2 for 25 venues (within free tier)
+   - **Action:** Increase from 5 → 15 reviews per venue
+   - **Cost:** ~$5-10/month for 200 venues
 
-#### 5. **Yelp Fusion API** (Free - 5,000 calls/day) - BACKUP
-   - **What it tells us:** Ratings, categories, business status
-   - **Coverage:** 6/25 test venues
-   - **Impact:** LOW - No review text via API
-   - **Status:** ✅ Working
-   - **Cost:** FREE
+#### 2. **OpenAI API (gpt-4o-mini)** - LLM REVIEW ANALYSIS ✅ IMPLEMENTED
+   - **What it tells us:** Structured extraction from reviews:
+     - Gender ratio with confidence levels
+     - Age range (20s, 30s, 40s+)
+     - Vibe classification (social/loud/quiet/upscale/casual)
+     - Best time to visit
+     - Crowd type (professionals, students, tourists, locals)
+     - Meeting potential score (pros/cons)
+   - **How:** Batch process reviews per venue through OpenAI gpt-4o-mini
+   - **Example prompt:** "Analyze these bar reviews and extract: 1) estimated male/female ratio, 2) typical age range, 3) social vibe (1-10), 4) best time to visit, 5) meeting potential"
+   - **Status:** ✅ Script created → Ready to run
+   - **Command:** `npm run analyze:openai`
+   - **Cost:** $0.0006 per venue = **$0.60 for 1,000 venues**
+   - **Processing:** ~2 minutes for 1,000 venues (10 req/sec)
+   - **ROI:** Massively improves gender detection accuracy at negligible cost
 
-#### 6. **Foursquare API** (Free - 950 calls/day) - TIPS
-   - **What it tells us:** User tips, venue categories
-   - **Coverage:** Good coverage in NYC
+#### 3. **Foursquare Places API** (Free - 950 calls/day) 🔄 READY TO ADD
+   - **What it tells us:** User tips mentioning crowd demographics
+   - **Coverage:** Good in NYC
    - **Impact:** MEDIUM - Alternative to Google reviews
-   - **Status:** 🔄 Ready (need API key)
+   - **Action:** Add script to fetch tips + run through Claude
+   - **Cost:** FREE
+
+#### 4. **Yelp Fusion API** (Free - 5,000 calls/day) ✅ WORKING
+   - **What it tells us:** Ratings, categories, business status
+   - **Limitation:** No review text via API
+   - **Impact:** LOW - Backup ratings only
    - **Cost:** FREE
 
 ---
 
-### Tier 4: Static Validation Data ✅ ONE-TIME IMPORT
+### Tier 2: Activity Patterns 📊 BUSYNESS PROXY
 
-#### 7. **NYC Cabaret License Data** (Free) - DANCE VALIDATION
-   - **What it tells us:** Which venues legally have dancing/entertainment
-   - **Update frequency:** Monthly
-   - **Coverage:** All licensed venues
-   - **Impact:** LOW - Validates "dance" mood venues
-   - **Status:** 🔄 Importing now
+#### 5. **NYC 311 Noise Complaints** (Free) ✅ WORKING
+   - **What it tells us:** Historical weekend activity patterns
+   - **Logic:** Friday 11PM complaints = venue is busy = more people
+   - **Data:** Last 90 days, peak hours, day-of-week patterns
+   - **Coverage:** 7/25 venues → expand to all
+   - **Impact:** MEDIUM - Predicts busy nights
    - **Cost:** FREE
 
 ---
 
-### Tier 5: AI Enhancement (Future Phase) 🚀
+### Tier 3: Future Enhancements 🚀 LATER
 
-#### 8. **Google Places AI Summaries** (Experimental)
-   - **What it tells us:** AI-generated venue descriptions
-   - **Status:** ❌ Not available yet (beta access required)
-   - **Cost:** ~$40/month minimum (Advanced tier)
-   - **Timeline:** Phase 3 (when broadly available)
+#### 6. **Instagram Location Tags** (Via Apify - $5-10/month)
+   - **What it tells us:** Photo volume = activity level
+   - **Method:** Weekly scrape of top 50 venues
+   - **Impact:** MEDIUM - Visual validation
+   - **Status:** Phase 2 (requires budget)
+   - **Cost:** $5-10/month
 
-#### 9. **Claude API (Anthropic)** - REVIEW ANALYSIS
-   - **What it tells us:** Structured gender/vibe/age data from reviews
-   - **Status:** ❌ Not implemented yet
-   - **Cost:** ~$5 one-time for 200 venues (Claude Haiku)
-   - **Timeline:** Phase 3
+#### 7. **BestTime.app** (Paid - $9-49/month)
+   - **What it tells us:** Real-time + historical busyness
+   - **Why skip for now:** 311 data gives similar signal for free
+   - **Status:** Phase 2 (if we get funding)
+   - **Cost:** $9+/month
+
+#### 8. **Google Places AI Summaries** (Not Available)
+   - **Status:** ❌ Limited beta access only
+   - **Issue:** New Google Places API (2024-2025) does NOT include AI summaries in public release
+   - **Alternative:** Use Claude to summarize Google reviews ourselves
+   - **Cost:** N/A (unavailable)
+   - **Timeline:** Phase 3 (when/if Google opens access)
+
+---
+
+### ❌ What We Tried (Doesn't Work)
+
+#### **Eventbrite API** - DEPRECATED
+   - **Issue:** Public search endpoint removed in 2020
+   - **Alternative:** Manual venue partnerships for event data
+   - **Status:** Removed from codebase
+
+#### **NYC Cabaret Licenses** - NO GPS DATA
+   - **Issue:** Datasets lack venue coordinates for matching
+   - **Status:** Removed from codebase
+
+#### **Google Popular Times** - NOT IN API
+   - **Issue:** Google doesn't expose popular times data officially
+   - **Workaround:** 311 complaints serve as activity proxy
+   - **Status:** Use 311 data instead
 
 ---
 
