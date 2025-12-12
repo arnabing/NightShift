@@ -373,7 +373,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
   console.log("🎨 MapViewClean render - venues:", venues.length, "loading:", loading, "drawerOpen:", drawerOpen);
 
   return (
-    <div className="fixed inset-0" style={{ width: '100vw', height: '100dvh' }}>
+    <div className="fixed inset-0 bg-black" style={{ width: '100vw', height: '100svh' }}>
       {/* Map as background - extends behind iOS safe areas */}
       <div ref={mapContainer} className="absolute inset-0" style={{ width: '100%', height: '100%' }} />
 
@@ -386,8 +386,8 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
         className="absolute z-50 glass-light rounded-full p-3 hover:bg-white/90 transition-all shadow-lg"
         style={{
           pointerEvents: 'auto',
-          top: 'calc(1rem + env(safe-area-inset-top, 0px))',
-          left: 'calc(1rem + env(safe-area-inset-left, 0px))',
+          top: 'max(1rem, calc(1rem + env(safe-area-inset-top, 0px)))',
+          left: 'max(1rem, calc(1rem + env(safe-area-inset-left, 0px)))',
         }}
       >
         <ArrowLeft className="w-5 h-5 text-foreground" />
@@ -396,7 +396,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       {/* Search bar - center top */}
       <div
         className="absolute left-1/2 -translate-x-1/2 z-50 w-48"
-        style={{ top: 'calc(1rem + env(safe-area-inset-top, 0px))' }}
+        style={{ top: 'max(1rem, calc(1rem + env(safe-area-inset-top, 0px)))' }}
       >
         <div className="relative">
           <div className="glass-light rounded-full shadow-lg flex items-center px-3 h-11">
@@ -530,8 +530,8 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       <div
         className="absolute z-50"
         style={{
-          top: 'calc(1rem + env(safe-area-inset-top, 0px))',
-          right: 'calc(1rem + env(safe-area-inset-right, 0px))',
+          top: 'max(1rem, calc(1rem + env(safe-area-inset-top, 0px)))',
+          right: 'max(1rem, calc(1rem + env(safe-area-inset-right, 0px)))',
         }}
       >
         <button
@@ -617,7 +617,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
             className="absolute left-1/2 -translate-x-1/2 z-50 glass rounded-full px-6 py-3 hover:bg-white/95 transition-all shadow-xl"
             style={{
               pointerEvents: 'auto',
-              bottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))',
+              bottom: 'max(1.5rem, calc(1.5rem + env(safe-area-inset-bottom, 0px)))',
             }}
           >
             <span className="text-sm font-semibold text-foreground">
