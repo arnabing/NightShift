@@ -20,15 +20,20 @@ body {
   background-color: #000000 !important;
 }
 
-/* Ensure Mapbox fills entire viewport including behind safe areas */
+/* CRITICAL: Use fixed (not absolute) for iOS Safari full-bleed */
 .mapboxgl-map,
 .mapboxgl-canvas-container,
 .mapboxgl-canvas {
-  position: absolute !important;
+  position: fixed !important;
   top: 0 !important;
   left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
   width: 100% !important;
   height: 100% !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  transform: translate3d(0,0,0); /* GPU acceleration fix for iOS 15+ */
 }
 
 @layer base {

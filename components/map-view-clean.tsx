@@ -375,7 +375,20 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
   return (
     <div className="fixed inset-0 bg-black" style={{ width: '100%', height: '100%' }}>
       {/* Map as background - extends behind iOS safe areas */}
-      <div ref={mapContainer} className="absolute inset-0" style={{ width: '100%', height: '100%' }} />
+      <div
+        ref={mapContainer}
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          width: '100%',
+          height: '100%',
+          margin: 0,
+          padding: 0
+        }}
+      />
 
       {/* Back button with frosted glass effect */}
       <button
