@@ -74,30 +74,27 @@ function getNeighborhood(address: string, city: string, county: string): string 
 }
 
 /**
- * Geocode an address using Mapbox API
+ * Geocode an address using US Census Bureau Geocoder (FREE, no API key needed)
+ * https://geocoding.geo.census.gov/geocoder/
  */
 async function geocodeAddress(
   address: string,
   city: string,
   state: string = "NY"
 ): Promise<{ lat: number; lng: number } | null> {
-  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-
-  if (!mapboxToken) {
-    console.warn("⚠️  NEXT_PUBLIC_MAPBOX_TOKEN not set, skipping geocoding");
-    return null;
-  }
-
-  const query = encodeURIComponent(`${address}, ${city}, ${state}`);
-  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${query}.json?access_token=${mapboxToken}&limit=1`;
+  const fullAddress = `${address}, ${city}, ${state}`;
+  const url = `https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?address=${encodeURIComponent(fullAddress)}&benchmark=Public_AR_Current&format=json`;
 
   try {
     const response = await fetch(url);
     const data = await response.json();
 
-    if (data.features && data.features.length > 0) {
-      const [lng, lat] = data.features[0].center;
-      return { lat, lng };
+    if (data.result?.addressMatches?.[0]) {
+      const match = data.result.addressMatches[0];
+      return {
+        lat: match.coordinates.y,
+        lng: match.coordinates.x,
+      };
     }
   } catch (error) {
     console.error(`Geocoding error for ${address}:`, error);
@@ -205,6 +202,7 @@ async function importVenuesFromLicenses() {
         address: `${license.premises_address}, ${license.premises_city}, NY ${license.premises_zip}`,
         neighborhood,
         liquorLicenseId: license.license_serial_number,
+        dataLayer: "base", // Mark as base layer venue
       },
     });
 
@@ -213,13 +211,18 @@ async function importVenuesFromLicenses() {
     );
     imported++;
 
-    // Rate limiting: wait 200ms between geocoding requests
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    // Rate limiting: wait 100ms between geocoding requests (Census is lenient)
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
-    // Limit to 1500 new venues for full NYC coverage
-    if (imported >= 1500) {
-      console.log("\n⚠️  Reached import limit of 1500 venues");
+    // Limit to 5000 new venues for full NYC coverage
+    if (imported >= 5000) {
+      console.log("\n⚠️  Reached import limit of 5000 venues");
       break;
+    }
+
+    // Progress update every 100 venues
+    if (imported % 100 === 0) {
+      console.log(`\n📊 Progress: ${imported} venues imported...\n`);
     }
   }
 
