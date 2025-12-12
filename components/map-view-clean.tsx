@@ -383,14 +383,21 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
           console.log("⬅️ Back button clicked");
           onBack();
         }}
-        className="absolute top-4 left-4 z-50 glass-light rounded-full p-3 hover:bg-white/90 transition-all shadow-lg"
-        style={{ pointerEvents: 'auto' }}
+        className="absolute z-50 glass-light rounded-full p-3 hover:bg-white/90 transition-all shadow-lg"
+        style={{
+          pointerEvents: 'auto',
+          top: 'calc(1rem + env(safe-area-inset-top, 0px))',
+          left: 'calc(1rem + env(safe-area-inset-left, 0px))',
+        }}
       >
         <ArrowLeft className="w-5 h-5 text-foreground" />
       </button>
 
       {/* Search bar - center top */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 w-48">
+      <div
+        className="absolute left-1/2 -translate-x-1/2 z-50 w-48"
+        style={{ top: 'calc(1rem + env(safe-area-inset-top, 0px))' }}
+      >
         <div className="relative">
           <div className="glass-light rounded-full shadow-lg flex items-center px-3 h-11">
             <Search className="w-5 h-5 text-gray-400 mr-2 flex-shrink-0" />
@@ -520,7 +527,13 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       </div>
 
       {/* Layer filter button - Google Maps style */}
-      <div className="absolute top-4 right-4 z-50">
+      <div
+        className="absolute z-50"
+        style={{
+          top: 'calc(1rem + env(safe-area-inset-top, 0px))',
+          right: 'calc(1rem + env(safe-area-inset-right, 0px))',
+        }}
+      >
         <button
           onClick={() => setLayerFilterOpen(!layerFilterOpen)}
           className="glass-light rounded-full p-3 hover:bg-white/90 transition-all shadow-lg"
@@ -601,8 +614,11 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       }}>
         <DrawerTrigger asChild>
           <button
-            className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 glass rounded-full px-6 py-3 hover:bg-white/95 transition-all shadow-xl"
-            style={{ pointerEvents: 'auto' }}
+            className="absolute left-1/2 -translate-x-1/2 z-50 glass rounded-full px-6 py-3 hover:bg-white/95 transition-all shadow-xl"
+            style={{
+              pointerEvents: 'auto',
+              bottom: 'calc(1.5rem + env(safe-area-inset-bottom, 0px))',
+            }}
           >
             <span className="text-sm font-semibold text-foreground">
               {loading ? "Loading..." : `${venues.length} venues`}
@@ -610,7 +626,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
           </button>
         </DrawerTrigger>
 
-        <DrawerContent className="max-h-[50vh] bg-white/95 backdrop-blur-xl shadow-2xl">
+        <DrawerContent className="max-h-[50vh] bg-white/95 backdrop-blur-xl shadow-2xl" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
           {selectedVenue ? (
             // Single venue detail view
             <div className="p-6">
