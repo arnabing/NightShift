@@ -390,28 +390,23 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
         }}
       />
 
-      {/* Back button with frosted glass effect */}
-      <button
-        onClick={() => {
-          console.log("⬅️ Back button clicked");
-          onBack();
-        }}
-        className="absolute z-50 glass-light rounded-full p-3 hover:bg-white/90 transition-all shadow-lg"
-        style={{
-          pointerEvents: 'auto',
-          top: 'max(1rem, calc(1rem + env(safe-area-inset-top, 0px)))',
-          left: 'max(1rem, calc(1rem + env(safe-area-inset-left, 0px)))',
-        }}
-      >
-        <ArrowLeft className="w-5 h-5 text-foreground" />
-      </button>
+      {/* Top overlays (safe-area padded; map stays full-bleed) */}
+      <div className="absolute inset-x-0 top-0 z-50 pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pointer-events-none">
+        <div className="relative h-14">
+          {/* Back button with frosted glass effect */}
+          <button
+            onClick={() => {
+              console.log("⬅️ Back button clicked");
+              onBack();
+            }}
+            className="absolute left-4 top-4 glass-light rounded-full p-3 hover:bg-white/90 transition-all shadow-lg pointer-events-auto"
+          >
+            <ArrowLeft className="w-5 h-5 text-foreground" />
+          </button>
 
-      {/* Search bar - center top */}
-      <div
-        className="absolute left-1/2 -translate-x-1/2 z-50 w-48"
-        style={{ top: 'max(1rem, calc(1rem + env(safe-area-inset-top, 0px)))' }}
-      >
-        <div className="relative">
+          {/* Search bar - center top */}
+          <div className="absolute left-1/2 -translate-x-1/2 top-4 w-48 pointer-events-auto">
+            <div className="relative">
           <div className="glass-light rounded-full shadow-lg flex items-center px-3 h-11">
             <Search className="w-5 h-5 text-gray-400 mr-2 flex-shrink-0" />
             <input
@@ -536,88 +531,84 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
               ))}
             </div>
           )}
-        </div>
-      </div>
-
-      {/* Layer filter button - Google Maps style */}
-      <div
-        className="absolute z-50"
-        style={{
-          top: 'max(1rem, calc(1rem + env(safe-area-inset-top, 0px)))',
-          right: 'max(1rem, calc(1rem + env(safe-area-inset-right, 0px)))',
-        }}
-      >
-        <button
-          onClick={() => setLayerFilterOpen(!layerFilterOpen)}
-          className="glass-light rounded-full p-3 hover:bg-white/90 transition-all shadow-lg"
-          style={{ pointerEvents: 'auto' }}
-        >
-          <Layers className="w-5 h-5 text-foreground" />
-        </button>
-
-        {/* Layer filter dropdown */}
-        {layerFilterOpen && (
-          <div className="absolute top-14 right-0 glass rounded-lg p-4 shadow-xl min-w-[260px]" style={{ pointerEvents: 'auto' }}>
-            <div className="space-y-3">
-              <div className="text-sm font-semibold text-foreground mb-3">Score Factors</div>
-
-              <div className="flex items-center gap-3">
-                <Checkbox
-                  id="gender"
-                  checked={enabledFactors.genderBalance}
-                  onCheckedChange={(checked) => setEnabledFactors({ ...enabledFactors, genderBalance: !!checked })}
-                />
-                <Label htmlFor="gender" className="text-sm text-foreground cursor-pointer">
-                  Gender Demographics
-                </Label>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <Checkbox
-                  id="vibe"
-                  checked={enabledFactors.socialVibe}
-                  onCheckedChange={(checked) => setEnabledFactors({ ...enabledFactors, socialVibe: !!checked })}
-                />
-                <Label htmlFor="vibe" className="text-sm text-foreground cursor-pointer">
-                  Social Atmosphere
-                </Label>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <Checkbox
-                  id="quality"
-                  checked={enabledFactors.quality}
-                  onCheckedChange={(checked) => setEnabledFactors({ ...enabledFactors, quality: !!checked })}
-                />
-                <Label htmlFor="quality" className="text-sm text-foreground cursor-pointer">
-                  Quality Ratings
-                </Label>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <Checkbox
-                  id="venueType"
-                  checked={enabledFactors.socialibility}
-                  onCheckedChange={(checked) => setEnabledFactors({ ...enabledFactors, socialibility: !!checked })}
-                />
-                <Label htmlFor="venueType" className="text-sm text-foreground cursor-pointer">
-                  Venue Type
-                </Label>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <Checkbox
-                  id="activity"
-                  checked={enabledFactors.activityLevel}
-                  onCheckedChange={(checked) => setEnabledFactors({ ...enabledFactors, activityLevel: !!checked })}
-                />
-                <Label htmlFor="activity" className="text-sm text-foreground cursor-pointer">
-                  NYC 311 Activity
-                </Label>
-              </div>
             </div>
           </div>
-        )}
+
+          {/* Layer filter button - Google Maps style */}
+          <div className="absolute right-4 top-4 pointer-events-auto">
+            <button
+              onClick={() => setLayerFilterOpen(!layerFilterOpen)}
+              className="glass-light rounded-full p-3 hover:bg-white/90 transition-all shadow-lg"
+              style={{ pointerEvents: 'auto' }}
+            >
+              <Layers className="w-5 h-5 text-foreground" />
+            </button>
+
+            {/* Layer filter dropdown */}
+            {layerFilterOpen && (
+              <div className="absolute top-14 right-0 glass rounded-lg p-4 shadow-xl min-w-[260px]" style={{ pointerEvents: 'auto' }}>
+                <div className="space-y-3">
+                  <div className="text-sm font-semibold text-foreground mb-3">Score Factors</div>
+
+                  <div className="flex items-center gap-3">
+                    <Checkbox
+                      id="gender"
+                      checked={enabledFactors.genderBalance}
+                      onCheckedChange={(checked) => setEnabledFactors({ ...enabledFactors, genderBalance: !!checked })}
+                    />
+                    <Label htmlFor="gender" className="text-sm text-foreground cursor-pointer">
+                      Gender Demographics
+                    </Label>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <Checkbox
+                      id="vibe"
+                      checked={enabledFactors.socialVibe}
+                      onCheckedChange={(checked) => setEnabledFactors({ ...enabledFactors, socialVibe: !!checked })}
+                    />
+                    <Label htmlFor="vibe" className="text-sm text-foreground cursor-pointer">
+                      Social Atmosphere
+                    </Label>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <Checkbox
+                      id="quality"
+                      checked={enabledFactors.quality}
+                      onCheckedChange={(checked) => setEnabledFactors({ ...enabledFactors, quality: !!checked })}
+                    />
+                    <Label htmlFor="quality" className="text-sm text-foreground cursor-pointer">
+                      Quality Ratings
+                    </Label>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <Checkbox
+                      id="venueType"
+                      checked={enabledFactors.socialibility}
+                      onCheckedChange={(checked) => setEnabledFactors({ ...enabledFactors, socialibility: !!checked })}
+                    />
+                    <Label htmlFor="venueType" className="text-sm text-foreground cursor-pointer">
+                      Venue Type
+                    </Label>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <Checkbox
+                      id="activity"
+                      checked={enabledFactors.activityLevel}
+                      onCheckedChange={(checked) => setEnabledFactors({ ...enabledFactors, activityLevel: !!checked })}
+                    />
+                    <Label htmlFor="activity" className="text-sm text-foreground cursor-pointer">
+                      NYC 311 Activity
+                    </Label>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Drawer component - slides up from bottom */}
@@ -626,20 +617,16 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
         setDrawerOpen(open);
       }}>
         <DrawerTrigger asChild>
-          <button
-            className="absolute left-1/2 -translate-x-1/2 z-50 glass rounded-full px-6 py-3 hover:bg-white/95 transition-all shadow-xl"
-            style={{
-              pointerEvents: 'auto',
-              bottom: 'max(1.5rem, calc(1.5rem + env(safe-area-inset-bottom, 0px)))',
-            }}
-          >
-            <span className="text-sm font-semibold text-foreground">
-              {loading ? "Loading..." : `${venues.length} venues`}
-            </span>
-          </button>
+          <div className="absolute inset-x-0 bottom-0 z-50 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pointer-events-none flex justify-center">
+            <button className="glass rounded-full px-6 py-3 hover:bg-white/95 transition-all shadow-xl pointer-events-auto">
+              <span className="text-sm font-semibold text-foreground">
+                {loading ? "Loading..." : `${venues.length} venues`}
+              </span>
+            </button>
+          </div>
         </DrawerTrigger>
 
-        <DrawerContent className="max-h-[50vh] bg-white/95 backdrop-blur-xl shadow-2xl" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+        <DrawerContent className="max-h-[50vh] bg-white/95 backdrop-blur-xl shadow-2xl pb-[env(safe-area-inset-bottom)]">
           {selectedVenue ? (
             // Single venue detail view
             <div className="p-6">

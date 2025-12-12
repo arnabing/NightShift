@@ -12,6 +12,8 @@ body {
   overflow: hidden;
   overscroll-behavior: none;
   -webkit-overflow-scrolling: touch;
+  /* Ensure iOS safe-area / overscroll regions don’t fall back to black */
+  background-color: hsl(var(--background));
 }
 
 /* CRITICAL: Use fixed (not absolute) for iOS Safari full-bleed */
