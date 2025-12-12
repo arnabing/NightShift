@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Mood } from "@/lib/types";
-import { ArrowLeft, MapPin, Layers } from "lucide-react";
+import { ArrowLeft, MapPin, Layers, Radar, Flame, RefreshCcw } from "lucide-react";
 import type { Venue as PrismaVenue } from "@prisma/client";
 import { getScoreTier, calculateDynamicMeetingScore, type EnabledFactors, type VenueScoreData } from "@/lib/scoring";
 import mapboxgl from "mapbox-gl";
@@ -47,6 +47,28 @@ interface VenueWithScore extends Venue {
   };
 }
 
+type LiveVenue = {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  address: string;
+  neighborhood: string;
+  venueType: string | null;
+  meetingScore: number | null;
+  rating: number | null;
+  noiseComplaints: number | null;
+  live: { available: boolean; liveBusyness: number | null; forecastBusyness: number | null };
+};
+
+type LiveResponse = {
+  mode: "hot" | "radar";
+  hasBestTimeKey: boolean;
+  updatedAt: string;
+  venues: LiveVenue[];
+  geojson: GeoJSON.FeatureCollection;
+};
+
 const moodLabels = {
   cocktails: "🍸 Nice cocktails",
   dive: "🍺 Dive loser",
@@ -60,9 +82,16 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
   const [venues, setVenues] = useState<VenueWithScore[]>([]);
   const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerMode, setDrawerMode] = useState<"venues" | "live">("venues");
   const [layerFilterOpen, setLayerFilterOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<VenueWithScore[]>([]);
+  const [liveEnabled, setLiveEnabled] = useState(false);
+  const [liveMode, setLiveMode] = useState<"hot" | "radar">("hot");
+  const [liveLoading, setLiveLoading] = useState(false);
+  const [liveError, setLiveError] = useState<string | null>(null);
+  const [liveData, setLiveData] = useState<LiveResponse | null>(null);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [enabledFactors, setEnabledFactors] = useState<EnabledFactors>({
     genderBalance: true,
     socialVibe: true,
@@ -76,6 +105,45 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
   const venuesRef = useRef<VenueWithScore[]>([]);
   const popupRef = useRef<mapboxgl.Popup | null>(null);
   const markerRef = useRef<mapboxgl.Marker | null>(null);
+
+  async function fetchLive(mode: "hot" | "radar") {
+    try {
+      setLiveLoading(true);
+      setLiveError(null);
+
+      const qs = new URLSearchParams();
+      qs.set("mode", mode);
+      qs.set("limit", mode === "radar" ? "50" : "140");
+
+      if (mode === "radar") {
+        const loc = userLocation;
+        if (!loc) throw new Error("Location not available");
+        qs.set("lat", String(loc.lat));
+        qs.set("lng", String(loc.lng));
+        qs.set("radiusMeters", "2500");
+      }
+
+      const res = await fetch(`/api/live?${qs.toString()}`);
+      if (!res.ok) throw new Error("Failed to fetch live data");
+      const data = (await res.json()) as LiveResponse;
+      setLiveData(data);
+    } catch (e) {
+      setLiveError(e instanceof Error ? e.message : "Failed to fetch live data");
+    } finally {
+      setLiveLoading(false);
+    }
+  }
+
+  function requestLocation(): Promise<{ lat: number; lng: number }> {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) return reject(new Error("Geolocation not supported"));
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        (err) => reject(new Error(err.message || "Location permission denied")),
+        { enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 }
+      );
+    });
+  }
 
   // Fetch ALL venues (base layer shows everything, not filtered by mood)
   useEffect(() => {
@@ -128,6 +196,46 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
         cluster: true,
         clusterMaxZoom: 14,
         clusterRadius: 50,
+      });
+
+      // Live heat source (not clustered)
+      newMap.addSource("live-venues", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+
+      // Heat layer (hidden by default)
+      newMap.addLayer({
+        id: "live-heat",
+        type: "heatmap",
+        source: "live-venues",
+        maxzoom: 15,
+        layout: {
+          visibility: "none",
+        },
+        paint: {
+          "heatmap-weight": ["/", ["get", "liveBusyness"], 100],
+          "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 10, 0.8, 14, 1.2],
+          "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 10, 18, 14, 42],
+          "heatmap-opacity": 0.55,
+          "heatmap-color": [
+            "interpolate",
+            ["linear"],
+            ["heatmap-density"],
+            0,
+            "rgba(59,130,246,0)",
+            0.2,
+            "rgba(59,130,246,0.35)",
+            0.4,
+            "rgba(147,51,234,0.45)",
+            0.65,
+            "rgba(236,72,153,0.55)",
+            0.85,
+            "rgba(245,158,11,0.7)",
+            1,
+            "rgba(239,68,68,0.75)",
+          ],
+        },
       });
 
       // Layer 1: Cluster circles
@@ -266,6 +374,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
           }
 
           setSelectedVenue(venue);
+          setDrawerMode("venues");
           setDrawerOpen(true);
           // Only zoom in if needed, never zoom out
           const currentZoom = newMap.getZoom();
@@ -367,6 +476,20 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       map.current.fitBounds(bounds, { padding: 50, maxZoom: 13 });
     }
   }, [venues, enabledFactors, mapLoaded]);
+
+  // Update Live GeoJSON source + heat layer visibility
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+    const src = map.current.getSource("live-venues") as mapboxgl.GeoJSONSource | undefined;
+    if (!src) return;
+
+    src.setData(liveData?.geojson ?? { type: "FeatureCollection", features: [] });
+
+    const visibility = liveEnabled ? "visible" : "none";
+    if (map.current.getLayer("live-heat")) {
+      map.current.setLayoutProperty("live-heat", "visibility", visibility);
+    }
+  }, [mapLoaded, liveData, liveEnabled]);
 
   const getPriceSymbol = (level: number) => "$".repeat(level);
 
@@ -611,6 +734,67 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
         </div>
       </div>
 
+      {/* Live controls (glass) */}
+      <div className="absolute inset-x-0 top-0 z-40 pt-[calc(env(safe-area-inset-top)+4.5rem)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pointer-events-none flex justify-center">
+        <div className="pointer-events-auto glass-light rounded-full shadow-lg flex items-center gap-1 px-2 py-1">
+          <button
+            className={`rounded-full px-3 py-2 text-xs font-semibold transition-all flex items-center gap-2 ${
+              liveEnabled ? "bg-white/90" : "hover:bg-white/70"
+            }`}
+            onClick={async () => {
+              const next = !liveEnabled;
+              setLiveEnabled(next);
+              if (next) {
+                setLiveMode("hot");
+                setDrawerMode("live");
+                setSelectedVenue(null);
+                setDrawerOpen(true);
+                await fetchLive("hot");
+              }
+            }}
+          >
+            <Flame className="w-4 h-4" />
+            Live
+          </button>
+
+          <button
+            className="rounded-full px-3 py-2 text-xs font-semibold hover:bg-white/70 transition-all flex items-center gap-2 disabled:opacity-50"
+            disabled={!liveEnabled || liveLoading}
+            onClick={async () => {
+              if (!liveEnabled) return;
+              await fetchLive(liveMode);
+            }}
+          >
+            <RefreshCcw className="w-4 h-4" />
+          </button>
+
+          <button
+            className="rounded-full px-3 py-2 text-xs font-semibold hover:bg-white/70 transition-all flex items-center gap-2 disabled:opacity-50"
+            disabled={!liveEnabled || liveLoading}
+            onClick={async () => {
+              if (!liveEnabled) return;
+              try {
+                const loc = userLocation ?? (await requestLocation());
+                setUserLocation(loc);
+                setLiveMode("radar");
+                setDrawerMode("live");
+                setSelectedVenue(null);
+                setDrawerOpen(true);
+                await fetchLive("radar");
+              } catch (e) {
+                setLiveError(e instanceof Error ? e.message : "Location unavailable");
+                setDrawerMode("live");
+                setSelectedVenue(null);
+                setDrawerOpen(true);
+              }
+            }}
+          >
+            <Radar className="w-4 h-4" />
+            Radar
+          </button>
+        </div>
+      </div>
+
       {/* Drawer component - slides up from bottom */}
       <Drawer open={drawerOpen} onOpenChange={(open) => {
         console.log("🗂️ Drawer state changing to:", open);
@@ -667,64 +851,152 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
               </button>
             </div>
           ) : (
-            // Venue list view
-            <>
-              <DrawerHeader>
-                <DrawerTitle>{venues.length} Venues</DrawerTitle>
-              </DrawerHeader>
-              <div className="overflow-y-auto px-4 pb-8">
-                <div className="grid gap-3">
-                  {getVenuesWithDynamicScores()
-                    .sort((a, b) => (b.meetingScore || 0) - (a.meetingScore || 0))
-                    .map((venue, index) => {
-                      const tier = venue.meetingScore ? getScoreTier(venue.meetingScore) : null;
-                      const score = venue.meetingScore || 0;
+            drawerMode === "live" ? (
+              <>
+                <DrawerHeader>
+                  <DrawerTitle className="flex items-center justify-between gap-3">
+                    <span className="flex items-center gap-2">
+                      <Flame className="w-5 h-5 text-foreground" />
+                      Live {liveMode === "radar" ? "Radar" : "Hot Now"}
+                    </span>
+                    {liveData?.updatedAt && (
+                      <span className="text-xs font-medium text-muted-foreground">
+                        Updated {new Date(liveData.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    )}
+                  </DrawerTitle>
+                </DrawerHeader>
 
-                      let badgeColor = "bg-gray-100 text-gray-700";
-                      if (score >= 8) badgeColor = "bg-purple-500 text-white";
-                      else if (score >= 7) badgeColor = "bg-blue-500 text-white";
-                      else if (score >= 6) badgeColor = "bg-cyan-500 text-white";
+                <div className="overflow-y-auto px-4 pb-8">
+                  {!liveEnabled && (
+                    <div className="glass rounded-xl p-4 text-sm text-muted-foreground">
+                      Turn on <span className="font-semibold text-foreground">Live</span> to see foot traffic.
+                    </div>
+                  )}
+
+                  {liveEnabled && liveLoading && (
+                    <div className="glass rounded-xl p-4 text-sm text-muted-foreground">
+                      Fetching live data…
+                    </div>
+                  )}
+
+                  {liveEnabled && liveError && (
+                    <div className="glass rounded-xl p-4 text-sm text-muted-foreground">
+                      {liveError}
+                    </div>
+                  )}
+
+                  {liveEnabled && liveData && !liveData.hasBestTimeKey && (
+                    <div className="glass rounded-xl p-4 text-sm text-muted-foreground">
+                      Missing <span className="font-semibold text-foreground">BESTTIME_API_KEY_PRIVATE</span>. Live data will show once it’s set.
+                    </div>
+                  )}
+
+                  <div className="grid gap-3 mt-4">
+                    {(liveData?.venues ?? []).slice(0, 60).map((v) => {
+                      const busy = v.live.liveBusyness;
+                      const badge = busy === null ? "—" : `${busy}%`;
+                      const badgeTone =
+                        busy === null
+                          ? "bg-gray-100 text-gray-700"
+                          : busy >= 80
+                            ? "bg-red-500 text-white"
+                            : busy >= 60
+                              ? "bg-orange-500 text-white"
+                              : busy >= 40
+                                ? "bg-purple-500 text-white"
+                                : "bg-blue-500 text-white";
 
                       return (
                         <button
-                          key={venue.id}
+                          key={v.id}
                           onClick={() => {
-                            setSelectedVenue(venue);
-                            map.current?.flyTo({
-                              center: [venue.coordinates.lng, venue.coordinates.lat],
-                              zoom: 14,
-                            });
+                            map.current?.flyTo({ center: [v.lng, v.lat], zoom: 14 });
                           }}
                           className="text-left p-4 rounded-lg border border-border/50 hover:bg-accent transition-all"
                         >
                           <div className="flex items-start justify-between gap-4">
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-1">
-                                <span className="text-lg">{tier?.emoji || "📍"}</span>
-                                <h3 className="font-semibold">{venue.name}</h3>
-                                {index < 3 && (
-                                  <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full font-semibold">
-                                    TOP {index + 1}
-                                  </span>
-                                )}
+                                <span className="text-lg">📍</span>
+                                <h3 className="font-semibold">{v.name}</h3>
                               </div>
                               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                                 <MapPin className="w-3 h-3" />
-                                <span>{venue.neighborhood}</span>
+                                <span>{v.neighborhood}</span>
                               </div>
                             </div>
-                            {score > 0 && (
-                              <div className={`${badgeColor} text-2xl font-bold px-4 py-2 rounded-full shadow-md`}>
-                                {score}
-                              </div>
-                            )}
+                            <div className={`${badgeTone} text-lg font-bold px-3 py-1 rounded-full shadow-md`}>
+                              {badge}
+                            </div>
                           </div>
                         </button>
                       );
                     })}
+                  </div>
                 </div>
-              </div>
-            </>
+              </>
+            ) : (
+              // Venue list view
+              <>
+                <DrawerHeader>
+                  <DrawerTitle>{venues.length} Venues</DrawerTitle>
+                </DrawerHeader>
+                <div className="overflow-y-auto px-4 pb-8">
+                  <div className="grid gap-3">
+                    {getVenuesWithDynamicScores()
+                      .sort((a, b) => (b.meetingScore || 0) - (a.meetingScore || 0))
+                      .map((venue, index) => {
+                        const tier = venue.meetingScore ? getScoreTier(venue.meetingScore) : null;
+                        const score = venue.meetingScore || 0;
+
+                        let badgeColor = "bg-gray-100 text-gray-700";
+                        if (score >= 8) badgeColor = "bg-purple-500 text-white";
+                        else if (score >= 7) badgeColor = "bg-blue-500 text-white";
+                        else if (score >= 6) badgeColor = "bg-cyan-500 text-white";
+
+                        return (
+                          <button
+                            key={venue.id}
+                            onClick={() => {
+                              setDrawerMode("venues");
+                              setSelectedVenue(venue);
+                              map.current?.flyTo({
+                                center: [venue.coordinates.lng, venue.coordinates.lat],
+                                zoom: 14,
+                              });
+                            }}
+                            className="text-left p-4 rounded-lg border border-border/50 hover:bg-accent transition-all"
+                          >
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-lg">{tier?.emoji || "📍"}</span>
+                                  <h3 className="font-semibold">{venue.name}</h3>
+                                  {index < 3 && (
+                                    <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full font-semibold">
+                                      TOP {index + 1}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                  <MapPin className="w-3 h-3" />
+                                  <span>{venue.neighborhood}</span>
+                                </div>
+                              </div>
+                              {score > 0 && (
+                                <div className={`${badgeColor} text-2xl font-bold px-4 py-2 rounded-full shadow-md`}>
+                                  {score}
+                                </div>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+              </>
+            )
           )}
         </DrawerContent>
       </Drawer>

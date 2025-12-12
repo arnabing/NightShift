@@ -37,6 +37,9 @@ npm install
 NEXT_PUBLIC_MAPBOX_TOKEN=your_token
 DATABASE_URL=your_postgres_url
 
+# Optional (Live heatmap / Radar)
+BESTTIME_API_KEY_PRIVATE=your_besttime_private_key
+
 # Run
 npm run dev
 ```
