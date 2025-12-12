@@ -1,11 +1,6 @@
 @import "tailwindcss";
 
 /* Full screen iOS - extend behind safe areas (notch, home indicator) */
-html {
-  /* Black background fills any gaps behind safe areas */
-  background: #000000;
-}
-
 html,
 body {
   margin: 0;
@@ -17,7 +12,6 @@ body {
   overflow: hidden;
   overscroll-behavior: none;
   -webkit-overflow-scrolling: touch;
-  background-color: #000000 !important;
 }
 
 /* CRITICAL: Use fixed (not absolute) for iOS Safari full-bleed */

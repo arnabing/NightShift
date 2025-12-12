@@ -373,7 +373,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
   console.log("🎨 MapViewClean render - venues:", venues.length, "loading:", loading, "drawerOpen:", drawerOpen);
 
   return (
-    <div className="fixed inset-0 bg-black" style={{ width: '100%', height: '100%' }}>
+    <div className="fixed inset-0" style={{ width: '100%', height: '100%' }}>
       {/* Map as background - extends behind iOS safe areas */}
       <div
         ref={mapContainer}
