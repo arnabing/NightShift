@@ -72,7 +72,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
   });
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
-  const mapLoaded = useRef(false);
+  const [mapLoaded, setMapLoaded] = useState(false);
   const venuesRef = useRef<VenueWithScore[]>([]);
   const popupRef = useRef<mapboxgl.Popup | null>(null);
   const markerRef = useRef<mapboxgl.Marker | null>(null);
@@ -119,7 +119,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
     map.current = newMap;
 
     newMap.on("load", () => {
-      mapLoaded.current = true;
+      setMapLoaded(true);
 
       // Add GeoJSON source with clustering
       newMap.addSource("venues", {
@@ -294,7 +294,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
     return () => {
       map.current?.remove();
       map.current = null;
-      mapLoaded.current = false;
+      setMapLoaded(false);
     };
   }, []);
 
@@ -323,7 +323,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
 
   // Update GeoJSON source when venues change
   useEffect(() => {
-    if (!map.current || !mapLoaded.current || venues.length === 0) return;
+    if (!map.current || !mapLoaded || venues.length === 0) return;
 
     const source = map.current.getSource("venues") as mapboxgl.GeoJSONSource;
     if (!source) return;
@@ -366,7 +366,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       });
       map.current.fitBounds(bounds, { padding: 50, maxZoom: 13 });
     }
-  }, [venues, enabledFactors]);
+  }, [venues, enabledFactors, mapLoaded]);
 
   const getPriceSymbol = (level: number) => "$".repeat(level);
 
