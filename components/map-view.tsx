@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Mood } from "@/app/page";
+import { Mood } from "@/lib/types";
 import { ArrowLeft, MapPin, TrendingUp, Loader2, Map as MapIcon, List } from "lucide-react";
 import type { Venue } from "@/lib/types";
 import { getScoreTier } from "@/lib/scoring";

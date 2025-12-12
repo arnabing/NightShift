@@ -1,4 +1,5 @@
-import { Mood } from "@/app/page";
+// Mood types for venue filtering
+export type Mood = "cocktails" | "dive" | "sports" | "love" | "dance" | null;
 
 // Geographic coordinates
 export interface Coordinates {

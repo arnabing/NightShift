@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Mood } from "@/app/page";
+import { Mood } from "@/lib/types";
 import { ArrowLeft, MapPin, Layers } from "lucide-react";
 import type { Venue as PrismaVenue } from "@prisma/client";
 import { getScoreTier, calculateDynamicMeetingScore, type EnabledFactors, type VenueScoreData } from "@/lib/scoring";

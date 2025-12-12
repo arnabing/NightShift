@@ -1,6 +1,6 @@
 "use client";
 
-import { Mood } from "@/app/page";
+import { Mood } from "@/lib/types";
 
 interface MoodDialProps {
   selectedMood: Mood;

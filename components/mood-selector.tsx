@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Mood } from "@/app/page";
+import { Mood } from "@/lib/types";
 import { MoodDial } from "./mood-dial";
 
 interface MoodSelectorProps {
