@@ -14,7 +14,7 @@ import {
   DrawerTitle,
   DrawerTrigger,
 } from "@/components/ui/drawer";
-import { Search, X, LocateFixed } from "lucide-react";
+import { Search, X, LocateFixed, Loader2 } from "lucide-react";
 
 interface MapViewProps {
   mood: Mood;
@@ -91,6 +91,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [userLocationAccuracy, setUserLocationAccuracy] = useState<number | null>(null);
   const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const [placesVisible, setPlacesVisible] = useState(true);
   const [enabledFactors, setEnabledFactors] = useState<EnabledFactors>({
     genderBalance: true,
@@ -877,6 +878,21 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
             onClick={async () => {
               try {
                 setLocating(true);
+                setLocationError(null);
+
+                // If the user previously blocked location, avoid a confusing no-op.
+                if ("permissions" in navigator && navigator.permissions?.query) {
+                  try {
+                    const status = await navigator.permissions.query({ name: "geolocation" as PermissionName });
+                    if (status.state === "denied") {
+                      setLocationError("Location is blocked. Enable it in your browser/site settings.");
+                      return;
+                    }
+                  } catch {
+                    // permissions API is inconsistent across browsers; ignore and fall back to prompting
+                  }
+                }
+
                 const loc = await requestLocation();
                 setUserLocation({ lat: loc.lat, lng: loc.lng });
                 setUserLocationAccuracy(loc.accuracy);
@@ -892,15 +908,28 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
                 });
               } catch (e) {
                 console.error("Failed to get location:", e);
+                setLocationError(e instanceof Error ? e.message : "Failed to get location");
               } finally {
                 setLocating(false);
               }
             }}
             title="Current location"
           >
-            <LocateFixed className="w-4 h-4" />
+            {locating ? <Loader2 className="w-4 h-4 animate-spin" /> : <LocateFixed className="w-4 h-4" />}
           </button>
         </div>
+
+        {locationError && (
+          <div className="mt-2 pointer-events-auto glass-light rounded-xl shadow-lg flex items-center justify-between gap-3 px-3 py-2 text-xs text-muted-foreground">
+            <span>{locationError}</span>
+            <button
+              className="p-1 hover:bg-black/5 rounded-full transition-colors"
+              onClick={() => setLocationError(null)}
+            >
+              <X className="w-4 h-4 text-gray-400" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Drawer component - slides up from bottom */}
