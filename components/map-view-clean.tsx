@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Mood } from "@/lib/types";
 import { ArrowLeft, MapPin, Flame, RefreshCcw, Map as MapIcon } from "lucide-react";
 import type { Venue as PrismaVenue } from "@prisma/client";
@@ -101,8 +101,50 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
   const map = useRef<mapboxgl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const venuesRef = useRef<VenueWithScore[]>([]);
-  const popupRef = useRef<mapboxgl.Popup | null>(null);
-  const markerRef = useRef<mapboxgl.Marker | null>(null);
+
+  const venuesWithScores = useMemo(() => {
+    return venues.map((venue) => {
+      const scoreData: VenueScoreData = {
+        venueType: venue.venueType ?? undefined,
+        rating: venue.rating ?? undefined,
+        noiseComplaints: venue.noiseComplaints ?? undefined,
+        genderRatio: venue.genderRatio as any,
+        reviewSentiment: venue.reviewSentiment as any,
+      };
+
+      const scoreBreakdown = calculateDynamicMeetingScore(scoreData, enabledFactors);
+
+      return {
+        ...venue,
+        meetingScore: scoreBreakdown.total,
+        scoreBreakdown,
+      };
+    });
+  }, [venues, enabledFactors]);
+
+  const selectVenue = (venue: VenueWithScore) => {
+    setSelectedVenue(venue);
+    setDrawerMode("venues");
+    setDrawerOpen(true);
+
+    const m = map.current;
+    if (m) {
+      const currentZoom = m.getZoom();
+      m.flyTo({
+        center: [venue.coordinates.lng, venue.coordinates.lat],
+        zoom: Math.max(currentZoom, 14),
+      });
+    }
+  };
+
+  const clearSearchAndSelection = () => {
+    setSearchQuery("");
+    setSearchResults([]);
+    if (selectedVenue) {
+      setSelectedVenue(null);
+      setDrawerOpen(false);
+    }
+  };
 
   async function fetchLive(mode: "hot" | "radar") {
     try {
@@ -407,6 +449,25 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
         },
       });
 
+      // Selected venue highlight ring (kept visible even if Places toggled off)
+      // Inserted right below labels so text remains readable.
+      newMap.addLayer(
+        {
+          id: "selected-venue-ring",
+          type: "circle",
+          source: "venues",
+          filter: ["all", ["!", ["has", "point_count"]], ["==", ["get", "id"], ""]],
+          paint: {
+            "circle-color": "rgba(0,0,0,0)",
+            "circle-radius": 18,
+            "circle-stroke-width": 4,
+            "circle-stroke-color": "#a855f7",
+            "circle-opacity": 1,
+          },
+        },
+        "venue-labels"
+      );
+
       // Click on cluster → zoom in
       newMap.on("click", "clusters", (e) => {
         const features = newMap.queryRenderedFeatures(e.point, { layers: ["clusters"] });
@@ -431,31 +492,10 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
         if (!feature) return;
 
         const props = feature.properties as any;
-        const coords = (feature.geometry as GeoJSON.Point).coordinates;
 
         // Find full venue data from ref (avoids stale closure)
         const venue = venuesRef.current.find((v) => v.id === props.id);
-        if (venue) {
-          // Close any open popup and marker
-          if (popupRef.current) {
-            popupRef.current.remove();
-            popupRef.current = null;
-          }
-          if (markerRef.current) {
-            markerRef.current.remove();
-            markerRef.current = null;
-          }
-
-          setSelectedVenue(venue);
-          setDrawerMode("venues");
-          setDrawerOpen(true);
-          // Only zoom in if needed, never zoom out
-          const currentZoom = newMap.getZoom();
-          newMap.flyTo({
-            center: coords as [number, number],
-            zoom: Math.max(currentZoom, 14),
-          });
-        }
+        if (venue) selectVenue(venue);
       });
 
       // Cursor changes
@@ -481,36 +521,12 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
   }, []);
 
   // Recalculate venue scores based on enabled factors
-  const getVenuesWithDynamicScores = () => {
-    return venues.map((venue) => {
-      // Convert venue to VenueScoreData format (null to undefined conversion)
-      const scoreData: VenueScoreData = {
-        venueType: venue.venueType ?? undefined,
-        rating: venue.rating ?? undefined,
-        noiseComplaints: venue.noiseComplaints ?? undefined,
-        genderRatio: venue.genderRatio as any,
-        reviewSentiment: venue.reviewSentiment as any,
-      };
-
-      // Calculate dynamic score based on enabled factors
-      const scoreBreakdown = calculateDynamicMeetingScore(scoreData, enabledFactors);
-
-      return {
-        ...venue,
-        meetingScore: scoreBreakdown.total,
-        scoreBreakdown,
-      };
-    });
-  };
-
   // Update GeoJSON source when venues change
   useEffect(() => {
     if (!map.current || !mapLoaded || venues.length === 0) return;
 
     const source = map.current.getSource("venues") as mapboxgl.GeoJSONSource;
     if (!source) return;
-
-    const venuesWithScores = getVenuesWithDynamicScores();
 
     // Update ref for click handler (avoids stale closure)
     venuesRef.current = venuesWithScores;
@@ -548,7 +564,16 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       });
       map.current.fitBounds(bounds, { padding: 50, maxZoom: 13 });
     }
-  }, [venues, enabledFactors, mapLoaded]);
+  }, [venuesWithScores, mapLoaded, selectedVenue, venues.length]);
+
+  // Keep the selected ring synced with the selected venue (works for search + taps)
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+    if (!map.current.getLayer("selected-venue-ring")) return;
+
+    const id = selectedVenue?.id ?? "";
+    map.current.setFilter("selected-venue-ring", ["all", ["!", ["has", "point_count"]], ["==", ["get", "id"], id]]);
+  }, [mapLoaded, selectedVenue]);
 
   // Update Live GeoJSON source + heat layer visibility
   useEffect(() => {
@@ -625,11 +650,13 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
                 const query = e.target.value;
                 setSearchQuery(query);
                 if (query.length > 0) {
-                  const filtered = venues.filter((v) =>
-                    v.name.toLowerCase().includes(query.toLowerCase()) ||
-                    v.neighborhood.toLowerCase().includes(query.toLowerCase())
-                  );
-                  setSearchResults(filtered.slice(0, 5));
+                  const q = query.toLowerCase();
+                  const filtered = venuesWithScores.filter((v) => {
+                    const name = v.name.toLowerCase();
+                    const nbh = v.neighborhood.toLowerCase();
+                    return name.includes(q) || nbh.includes(q);
+                  });
+                  setSearchResults(filtered.slice(0, 6));
                 } else {
                   setSearchResults([]);
                 }
@@ -637,11 +664,10 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
               className="flex-1 bg-transparent outline-none text-foreground placeholder:text-gray-400 text-sm"
               style={{ pointerEvents: 'auto' }}
             />
-            {searchQuery && (
+            {(searchQuery || selectedVenue) && (
               <button
                 onClick={() => {
-                  setSearchQuery("");
-                  setSearchResults([]);
+                  clearSearchAndSelection();
                 }}
                 className="p-1 hover:bg-black/5 rounded-full transition-colors"
                 style={{ pointerEvents: 'auto' }}
@@ -658,78 +684,9 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
                 <button
                   key={venue.id}
                   onClick={() => {
-                    setSelectedVenue(venue);
                     setSearchQuery("");
                     setSearchResults([]);
-
-                    // Fly to venue
-                    map.current?.flyTo({
-                      center: [venue.coordinates.lng, venue.coordinates.lat],
-                      zoom: 15,
-                    });
-
-                    // Remove existing popup and marker
-                    if (popupRef.current) {
-                      popupRef.current.remove();
-                    }
-                    if (markerRef.current) {
-                      markerRef.current.remove();
-                    }
-
-                    // Create a custom pin marker at the venue location
-                    const markerEl = document.createElement('div');
-                    markerEl.className = 'selected-marker';
-                    markerEl.innerHTML = `
-                      <div style="position: relative; width: 40px; height: 48px;">
-                        <svg width="40" height="48" viewBox="0 0 40 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <defs>
-                            <linearGradient id="pin-gradient" x1="0" y1="0" x2="0" y2="48">
-                              <stop offset="0%" stop-color="#a855f7"/>
-                              <stop offset="100%" stop-color="#7c3aed"/>
-                            </linearGradient>
-                            <filter id="shadow" x="-20%" y="-10%" width="140%" height="130%">
-                              <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.3"/>
-                            </filter>
-                          </defs>
-                          <path d="M20 0C9 0 0 9 0 20c0 13 20 28 20 28s20-15 20-28C40 9 31 0 20 0z" fill="url(#pin-gradient)" filter="url(#shadow)"/>
-                          <circle cx="20" cy="17" r="10" fill="white"/>
-                        </svg>
-                        <span style="position: absolute; top: 8px; left: 50%; transform: translateX(-50%); font-size: 16px;">🍸</span>
-                      </div>
-                    `;
-                    markerEl.style.cssText = `cursor: pointer;`;
-                    markerEl.addEventListener('click', () => {
-                      // Just open drawer, keep marker visible
-                      setDrawerOpen(true);
-                    });
-
-                    markerRef.current = new mapboxgl.Marker({
-                      element: markerEl,
-                      anchor: 'bottom'  // Pin tip at exact location
-                    })
-                      .setLngLat([venue.coordinates.lng, venue.coordinates.lat])
-                      .addTo(map.current!);
-
-                    // Show popup with venue name (clickable to open drawer)
-                    const popupContent = document.createElement('div');
-                    popupContent.innerHTML = `
-                      <div style="padding: 10px 14px; font-weight: 600; font-size: 14px; cursor: pointer;">
-                        ${venue.name}
-                      </div>
-                    `;
-                    popupContent.addEventListener('click', () => {
-                      setDrawerOpen(true);
-                    });
-
-                    popupRef.current = new mapboxgl.Popup({
-                      closeButton: false,
-                      closeOnClick: false,
-                      offset: [0, -48],  // Position above the 48px tall marker
-                      className: 'venue-popup',
-                    })
-                      .setLngLat([venue.coordinates.lng, venue.coordinates.lat])
-                      .setDOMContent(popupContent)
-                      .addTo(map.current!);
+                    selectVenue(venue);
                   }}
                   className="w-full px-4 py-3 text-left hover:bg-black/5 transition-colors border-b border-black/5 last:border-b-0"
                 >
@@ -939,7 +896,8 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
                 </DrawerHeader>
                 <div className="overflow-y-auto px-4 pb-8">
                   <div className="grid gap-3">
-                    {getVenuesWithDynamicScores()
+                    {venuesWithScores
+                      .slice()
                       .sort((a, b) => (b.meetingScore || 0) - (a.meetingScore || 0))
                       .map((venue, index) => {
                         const tier = venue.meetingScore ? getScoreTier(venue.meetingScore) : null;
@@ -955,11 +913,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
                             key={venue.id}
                             onClick={() => {
                               setDrawerMode("venues");
-                              setSelectedVenue(venue);
-                              map.current?.flyTo({
-                                center: [venue.coordinates.lng, venue.coordinates.lat],
-                                zoom: 14,
-                              });
+                              selectVenue(venue);
                             }}
                             className="text-left p-4 rounded-lg border border-border/50 hover:bg-accent transition-all"
                           >
