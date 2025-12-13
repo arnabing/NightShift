@@ -14,7 +14,7 @@ import {
   DrawerTitle,
   DrawerTrigger,
 } from "@/components/ui/drawer";
-import { Search, X } from "lucide-react";
+import { Search, X, LocateFixed } from "lucide-react";
 
 interface MapViewProps {
   mood: Mood;
@@ -89,6 +89,8 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
   const [liveError, setLiveError] = useState<string | null>(null);
   const [liveData, setLiveData] = useState<LiveResponse | null>(null);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [userLocationAccuracy, setUserLocationAccuracy] = useState<number | null>(null);
+  const [locating, setLocating] = useState(false);
   const [placesVisible, setPlacesVisible] = useState(true);
   const [enabledFactors, setEnabledFactors] = useState<EnabledFactors>({
     genderBalance: true,
@@ -173,15 +175,59 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
     }
   }
 
-  function requestLocation(): Promise<{ lat: number; lng: number }> {
+  function requestLocation(): Promise<{ lat: number; lng: number; accuracy: number | null }> {
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) return reject(new Error("Geolocation not supported"));
       navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        (pos) =>
+          resolve({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: typeof pos.coords.accuracy === "number" ? pos.coords.accuracy : null,
+          }),
         (err) => reject(new Error(err.message || "Location permission denied")),
         { enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 }
       );
     });
+  }
+
+  function makeCirclePolygon(lng: number, lat: number, radiusMeters: number, steps = 64): GeoJSON.Feature<GeoJSON.Polygon> {
+    // Approximate circle on Earth surface (good enough for 5–2000m)
+    const earthRadius = 6378137; // meters
+    const toRad = (d: number) => (d * Math.PI) / 180;
+    const toDeg = (r: number) => (r * 180) / Math.PI;
+
+    const latRad = toRad(lat);
+    const lngRad = toRad(lng);
+    const angular = radiusMeters / earthRadius;
+
+    const coords: [number, number][] = [];
+    for (let i = 0; i <= steps; i++) {
+      const bearing = (2 * Math.PI * i) / steps;
+      const sinLat = Math.sin(latRad);
+      const cosLat = Math.cos(latRad);
+      const sinAngular = Math.sin(angular);
+      const cosAngular = Math.cos(angular);
+
+      const lat2 = Math.asin(sinLat * cosAngular + cosLat * sinAngular * Math.cos(bearing));
+      const lng2 =
+        lngRad +
+        Math.atan2(
+          Math.sin(bearing) * sinAngular * cosLat,
+          cosAngular - sinLat * Math.sin(lat2)
+        );
+
+      coords.push([toDeg(lng2), toDeg(lat2)]);
+    }
+
+    return {
+      type: "Feature",
+      properties: {},
+      geometry: {
+        type: "Polygon",
+        coordinates: [coords],
+      },
+    };
   }
 
   // Heatmap-first UX: fetch hotspots on load
@@ -251,6 +297,16 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
         data: { type: "FeatureCollection", features: [] },
       });
 
+      // User location (blue dot + accuracy circle)
+      newMap.addSource("user-location-point", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      newMap.addSource("user-location-accuracy", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+
       // Heat layer (hidden by default)
       newMap.addLayer({
         id: "live-heat",
@@ -284,6 +340,39 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
             1,
             "rgba(239,68,68,0.75)",
           ],
+        },
+      });
+
+      // Accuracy circle (Google Maps style)
+      newMap.addLayer({
+        id: "user-location-accuracy-fill",
+        type: "fill",
+        source: "user-location-accuracy",
+        paint: {
+          "fill-color": "rgba(59,130,246,0.18)", // blue-500
+          "fill-outline-color": "rgba(59,130,246,0.35)",
+        },
+      });
+      newMap.addLayer({
+        id: "user-location-accuracy-line",
+        type: "line",
+        source: "user-location-accuracy",
+        paint: {
+          "line-color": "rgba(59,130,246,0.45)",
+          "line-width": 2,
+        },
+      });
+
+      // Blue dot
+      newMap.addLayer({
+        id: "user-location-dot",
+        type: "circle",
+        source: "user-location-point",
+        paint: {
+          "circle-color": "#3b82f6",
+          "circle-radius": 7,
+          "circle-stroke-width": 3,
+          "circle-stroke-color": "#ffffff",
         },
       });
 
@@ -588,6 +677,44 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
     }
   }, [mapLoaded, liveData, liveEnabled]);
 
+  // Update user location sources (dot + accuracy circle)
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+    const pointSrc = map.current.getSource("user-location-point") as mapboxgl.GeoJSONSource | undefined;
+    const accuracySrc = map.current.getSource("user-location-accuracy") as mapboxgl.GeoJSONSource | undefined;
+    if (!pointSrc || !accuracySrc) return;
+
+    if (!userLocation) {
+      pointSrc.setData({ type: "FeatureCollection", features: [] });
+      accuracySrc.setData({ type: "FeatureCollection", features: [] });
+      return;
+    }
+
+    pointSrc.setData({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          properties: {},
+          geometry: {
+            type: "Point",
+            coordinates: [userLocation.lng, userLocation.lat],
+          },
+        },
+      ],
+    });
+
+    const accuracy = userLocationAccuracy ?? 0;
+    if (accuracy > 0) {
+      accuracySrc.setData({
+        type: "FeatureCollection",
+        features: [makeCirclePolygon(userLocation.lng, userLocation.lat, accuracy)],
+      });
+    } else {
+      accuracySrc.setData({ type: "FeatureCollection", features: [] });
+    }
+  }, [mapLoaded, userLocation, userLocationAccuracy]);
+
   // Places toggle: show/hide the venue dot layers so the heatmap stays legible
   useEffect(() => {
     if (!map.current || !mapLoaded) return;
@@ -742,6 +869,36 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
             }}
           >
             <RefreshCcw className="w-4 h-4" />
+          </button>
+
+          <button
+            className="rounded-full px-3 py-2 text-xs font-semibold hover:bg-white/70 transition-all flex items-center gap-2 disabled:opacity-50"
+            disabled={locating}
+            onClick={async () => {
+              try {
+                setLocating(true);
+                const loc = await requestLocation();
+                setUserLocation({ lat: loc.lat, lng: loc.lng });
+                setUserLocationAccuracy(loc.accuracy);
+
+                // If Radar is active, refresh live data around you
+                if (liveEnabled && liveMode === "radar") {
+                  await fetchLive("radar");
+                }
+
+                map.current?.flyTo({
+                  center: [loc.lng, loc.lat],
+                  zoom: Math.max(map.current?.getZoom() ?? 11, 14),
+                });
+              } catch (e) {
+                console.error("Failed to get location:", e);
+              } finally {
+                setLocating(false);
+              }
+            }}
+            title="Current location"
+          >
+            <LocateFixed className="w-4 h-4" />
           </button>
         </div>
       </div>
