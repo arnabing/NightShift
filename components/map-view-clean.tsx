@@ -94,6 +94,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
   const [userLocationUpdatedAt, setUserLocationUpdatedAt] = useState<number | null>(null);
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [locationHint, setLocationHint] = useState<string | null>(null);
   const [hasRequestedLocation, setHasRequestedLocation] = useState(false);
   const [placesVisible, setPlacesVisible] = useState(true);
   const [enabledFactors, setEnabledFactors] = useState<EnabledFactors>({
@@ -179,7 +180,11 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
     }
   }
 
-  function requestLocation(): Promise<{ lat: number; lng: number; accuracy: number | null }> {
+  function requestLocation(opts?: {
+    enableHighAccuracy?: boolean;
+    timeout?: number;
+    maximumAge?: number;
+  }): Promise<{ lat: number; lng: number; accuracy: number | null }> {
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) return reject(new Error("Geolocation not supported"));
       navigator.geolocation.getCurrentPosition(
@@ -190,8 +195,12 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
             accuracy: typeof pos.coords.accuracy === "number" ? pos.coords.accuracy : null,
           }),
         (err) => reject(new Error(err.message || "Location permission denied")),
-        // Battery-friendly: allow cached location; only one-shot on demand.
-        { enableHighAccuracy: true, timeout: 8_000, maximumAge: 120_000 }
+        // One-shot on demand. Defaults are battery-friendly unless overridden.
+        {
+          enableHighAccuracy: opts?.enableHighAccuracy ?? true,
+          timeout: opts?.timeout ?? 8_000,
+          maximumAge: opts?.maximumAge ?? 120_000,
+        }
       );
     });
   }
@@ -247,6 +256,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
     try {
       setHasRequestedLocation(true);
       setLocationError(null);
+      setLocationHint(null);
 
       // If we already have a recent fix, just recenter (fast + battery friendly).
       if (userLocation && userLocationUpdatedAt && Date.now() - userLocationUpdatedAt < 60_000) {
@@ -267,11 +277,22 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
 
       // IMPORTANT: Trigger geolocation immediately on user tap.
       // Some browsers drop the permission prompt if you await before calling getCurrentPosition.
-      const locPromise = requestLocation();
+      // Also request a FRESH fix (no cache) so the dot matches the user's current position.
+      const locPromise = requestLocation({ enableHighAccuracy: true, timeout: 12_000, maximumAge: 0 });
       const loc = await locPromise;
       setUserLocation({ lat: loc.lat, lng: loc.lng });
       setUserLocationAccuracy(loc.accuracy);
       setUserLocationUpdatedAt(Date.now());
+
+      if (loc.accuracy && loc.accuracy > 500) {
+        setLocationHint(
+          `Location is approximate (±${Math.round(loc.accuracy)}m). Turn on Precise Location in your browser settings for better accuracy.`
+        );
+      } else if (loc.accuracy && loc.accuracy > 0) {
+        setLocationHint(`Location updated (±${Math.round(loc.accuracy)}m).`);
+      } else {
+        setLocationHint("Location updated.");
+      }
 
       // If Radar is active, refresh live data around you
       if (liveEnabled && liveMode === "radar") {
@@ -956,6 +977,19 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
             <button
               className="p-1 hover:bg-black/5 rounded-full transition-colors"
               onClick={() => setLocationError(null)}
+            >
+              <X className="w-4 h-4 text-gray-400" />
+            </button>
+          </div>
+        )}
+
+        {locationHint && !locationError && (
+          <div className="mt-2 pointer-events-auto glass-light rounded-xl shadow-lg flex items-center justify-between gap-3 px-3 py-2 text-xs text-muted-foreground">
+            <span>{locationHint}</span>
+            <button
+              className="p-1 hover:bg-black/5 rounded-full transition-colors"
+              onClick={() => setLocationHint(null)}
+              title="Dismiss"
             >
               <X className="w-4 h-4 text-gray-400" />
             </button>
