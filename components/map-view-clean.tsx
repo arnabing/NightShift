@@ -92,6 +92,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
   const [userLocationAccuracy, setUserLocationAccuracy] = useState<number | null>(null);
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [hasRequestedLocation, setHasRequestedLocation] = useState(false);
   const [placesVisible, setPlacesVisible] = useState(true);
   const [enabledFactors, setEnabledFactors] = useState<EnabledFactors>({
     genderBalance: true,
@@ -238,6 +239,52 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
     fetchLive("hot");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const requestAndCenterOnLocation = async () => {
+    try {
+      setLocating(true);
+      setHasRequestedLocation(true);
+      setLocationError(null);
+
+      // Geolocation requires a secure context (https) except on localhost.
+      if (!window.isSecureContext) {
+        setLocationError("Location requires HTTPS. Open the secure site or add it to your home screen.");
+        return;
+      }
+
+      // If the user previously blocked location, avoid a confusing no-op.
+      if ("permissions" in navigator && navigator.permissions?.query) {
+        try {
+          const status = await navigator.permissions.query({ name: "geolocation" as PermissionName });
+          if (status.state === "denied") {
+            setLocationError("Location is blocked. Enable it in your browser/site settings.");
+            return;
+          }
+        } catch {
+          // permissions API is inconsistent across browsers; ignore and fall back to prompting
+        }
+      }
+
+      const loc = await requestLocation();
+      setUserLocation({ lat: loc.lat, lng: loc.lng });
+      setUserLocationAccuracy(loc.accuracy);
+
+      // If Radar is active, refresh live data around you
+      if (liveEnabled && liveMode === "radar") {
+        await fetchLive("radar");
+      }
+
+      map.current?.flyTo({
+        center: [loc.lng, loc.lat],
+        zoom: Math.max(map.current?.getZoom() ?? 11, 14),
+      });
+    } catch (e) {
+      console.error("Failed to get location:", e);
+      setLocationError(e instanceof Error ? e.message : "Failed to get location");
+    } finally {
+      setLocating(false);
+    }
+  };
 
   // Fetch ALL venues (base layer shows everything, not filtered by mood)
   useEffect(() => {
@@ -869,58 +916,6 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
           >
             <RefreshCcw className="w-4 h-4" />
           </button>
-
-          <button
-            className="rounded-full px-3 py-2 text-xs font-semibold hover:bg-white/70 transition-all flex items-center gap-2 disabled:opacity-50"
-            disabled={locating}
-            onClick={async () => {
-              try {
-                setLocating(true);
-                setLocationError(null);
-
-                // Geolocation requires a secure context (https) except on localhost.
-                if (!window.isSecureContext) {
-                  setLocationError("Location requires HTTPS. Open the secure site or add it to your home screen.");
-                  return;
-                }
-
-                // If the user previously blocked location, avoid a confusing no-op.
-                if ("permissions" in navigator && navigator.permissions?.query) {
-                  try {
-                    const status = await navigator.permissions.query({ name: "geolocation" as PermissionName });
-                    if (status.state === "denied") {
-                      setLocationError("Location is blocked. Enable it in your browser/site settings.");
-                      return;
-                    }
-                  } catch {
-                    // permissions API is inconsistent across browsers; ignore and fall back to prompting
-                  }
-                }
-
-                const loc = await requestLocation();
-                setUserLocation({ lat: loc.lat, lng: loc.lng });
-                setUserLocationAccuracy(loc.accuracy);
-
-                // If Radar is active, refresh live data around you
-                if (liveEnabled && liveMode === "radar") {
-                  await fetchLive("radar");
-                }
-
-                map.current?.flyTo({
-                  center: [loc.lng, loc.lat],
-                  zoom: Math.max(map.current?.getZoom() ?? 11, 14),
-                });
-              } catch (e) {
-                console.error("Failed to get location:", e);
-                setLocationError(e instanceof Error ? e.message : "Failed to get location");
-              } finally {
-                setLocating(false);
-              }
-            }}
-            title="Current location"
-          >
-            {locating ? <Loader2 className="w-4 h-4 animate-spin" /> : <LocateFixed className="w-4 h-4" />}
-          </button>
         </div>
 
         {locationError && (
@@ -934,6 +929,33 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
             </button>
           </div>
         )}
+      </div>
+
+      {/* Floating GPS button (Google Maps style) */}
+      <div className="absolute bottom-0 right-0 z-40 pb-[calc(env(safe-area-inset-bottom)+5.5rem)] pr-[calc(env(safe-area-inset-right)+1rem)] pointer-events-none">
+        <button
+          type="button"
+          title="Current location"
+          onClick={requestAndCenterOnLocation}
+          disabled={locating}
+          className={[
+            "pointer-events-auto",
+            "glass-light",
+            "rounded-full",
+            "p-3",
+            "shadow-xl",
+            "border",
+            "border-black/5",
+            "hover:bg-white/80",
+            "active:scale-95",
+            "transition-all",
+            "disabled:opacity-60",
+            // Slow blink until first tap (permission prompt trigger)
+            !hasRequestedLocation ? "animate-[pulse_2.8s_ease-in-out_infinite]" : "",
+          ].join(" ")}
+        >
+          {locating ? <Loader2 className="w-5 h-5 animate-spin" /> : <LocateFixed className="w-5 h-5" />}
+        </button>
       </div>
 
       {/* Drawer component - slides up from bottom */}
