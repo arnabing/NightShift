@@ -747,10 +747,15 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       </div>
 
       {/* Drawer component - slides up from bottom */}
-      <Drawer open={drawerOpen} onOpenChange={(open) => {
+      <Drawer
+        open={drawerOpen}
+        modal={false}
+        shouldScaleBackground={false}
+        onOpenChange={(open) => {
         console.log("🗂️ Drawer state changing to:", open);
         setDrawerOpen(open);
-      }}>
+      }}
+      >
         <DrawerTrigger asChild>
           <div className="absolute inset-x-0 bottom-0 z-50 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pointer-events-none flex justify-center">
             <button className="glass rounded-full px-6 py-3 hover:bg-white/95 transition-all shadow-xl pointer-events-auto">
