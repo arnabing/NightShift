@@ -89,7 +89,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
   const [liveError, setLiveError] = useState<string | null>(null);
   const [liveData, setLiveData] = useState<LiveResponse | null>(null);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const [placesVisible, setPlacesVisible] = useState(false);
+  const [placesVisible, setPlacesVisible] = useState(true);
   const [enabledFactors, setEnabledFactors] = useState<EnabledFactors>({
     genderBalance: true,
     socialVibe: true,
@@ -257,9 +257,9 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
           "circle-radius": [
             "step",
             ["get", "point_count"],
-            16, // small clusters
-            10, 20, // medium
-            50, 26, // large
+            20, // small clusters
+            10, 26, // medium
+            50, 34, // large
           ],
           "circle-blur": 0.6,
         },
@@ -274,20 +274,22 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
           "circle-color": [
             "step",
             ["get", "point_count"],
-            "rgba(255,255,255,0.55)", // glassy for small
-            10, "rgba(255,255,255,0.50)", // medium
-            50, "rgba(255,255,255,0.45)", // large
+            "rgba(15,23,42,0.55)", // slate-900 glass (high contrast on light map)
+            10, "rgba(15,23,42,0.50)", // medium
+            50, "rgba(15,23,42,0.45)", // large
           ],
           "circle-radius": [
             "step",
             ["get", "point_count"],
-            14, // small clusters
-            10, 18, // medium
-            50, 24, // large
+            18, // small clusters
+            10, 24, // medium
+            50, 32, // large
           ],
-          "circle-opacity": 0.9,
-          "circle-stroke-width": 1.25,
+          "circle-opacity": 1,
+          "circle-stroke-width": 1.5,
           "circle-stroke-color": "rgba(255,255,255,0.65)",
+          // Soft edge to mimic iOS glass depth
+          "circle-blur": 0.15,
         },
       });
 
@@ -299,10 +301,20 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
         source: "venues",
         filter: ["has", "point_count"],
         layout: {
-          "text-field": "{point_count_abbreviated}",
+          "text-field": [
+            "format",
+            ["get", "point_count_abbreviated"],
+            { "font-scale": 1.0 },
+            "\n",
+            {},
+            "bars",
+            { "font-scale": 0.55 },
+          ],
           "text-size": 11,
           "text-font": ["DIN Offc Pro Medium", "Arial Unicode MS Bold"],
-          "text-offset": [0, 0.08],
+          "text-offset": [0, 0.12],
+          "text-justify": "center",
+          "text-line-height": 1.0,
         },
         paint: {
           "text-color": "rgba(0,0,0,0.35)",
@@ -317,15 +329,25 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
         source: "venues",
         filter: ["has", "point_count"],
         layout: {
-          "text-field": "{point_count_abbreviated}",
+          "text-field": [
+            "format",
+            ["get", "point_count_abbreviated"],
+            { "font-scale": 1.0 },
+            "\n",
+            {},
+            "bars",
+            { "font-scale": 0.55 },
+          ],
           "text-size": 11,
           "text-font": ["DIN Offc Pro Medium", "Arial Unicode MS Bold"],
+          "text-justify": "center",
+          "text-line-height": 1.0,
         },
         paint: {
-          "text-color": "rgba(17,24,39,0.95)", // darker for contrast
-          "text-halo-color": "rgba(255,255,255,0.75)",
-          "text-halo-width": 1.4,
-          "text-halo-blur": 0.6,
+          "text-color": "rgba(255,255,255,0.98)", // white for contrast
+          "text-halo-color": "rgba(0,0,0,0.25)",
+          "text-halo-width": 0.8,
+          "text-halo-blur": 0.4,
         },
       });
 
