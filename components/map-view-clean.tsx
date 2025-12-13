@@ -215,7 +215,8 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
         id: "live-heat",
         type: "heatmap",
         source: "live-venues",
-        maxzoom: 15,
+        // Keep heatmap visible while zooming in (Mapbox hides heatmaps past maxzoom)
+        maxzoom: 22,
         layout: {
           visibility: "none",
         },
