@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getBestTimeLiveByName, promisePool } from "@/lib/besttime";
+import { getBestTimeVenueFilter } from "@/lib/besttime";
 
 function numParam(url: URL, key: string, fallback: number): number {
   const raw = url.searchParams.get(key);
@@ -44,10 +44,21 @@ function haversineMeters(a: { lat: number; lng: number }, b: { lat: number; lng:
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const mode = strParam(url, "mode", "hot"); // "hot" | "radar"
-  const limit = Math.max(1, Math.min(300, numParam(url, "limit", mode === "radar" ? 40 : 120)));
-  const concurrency = Math.max(1, Math.min(20, numParam(url, "concurrency", 10)));
+  const limit = Math.max(1, Math.min(500, numParam(url, "limit", mode === "radar" ? 80 : 250)));
+  const debug = url.searchParams.get("debug") === "1";
 
   const apiKeyPrivate = process.env.BESTTIME_API_KEY_PRIVATE;
+
+  // If BestTime key missing, return empty hotspot payload.
+  if (!apiKeyPrivate) {
+    return NextResponse.json({
+      mode,
+      hasBestTimeKey: false,
+      updatedAt: new Date().toISOString(),
+      venues: [],
+      geojson: { type: "FeatureCollection", features: [] },
+    });
+  }
 
   // Hot mode: pick a nightlife-ish subset citywide using your existing signals (meetingScore + complaints + rating).
   // Radar mode: venues near a lat/lng center.
@@ -134,83 +145,134 @@ export async function GET(req: Request) {
     });
   }
 
-  const live = await promisePool(
-    venues,
-    concurrency,
-    async (v): Promise<{ venueId: string; available: boolean; liveBusyness: number | null; forecastBusyness: number | null }> => {
-      if (!apiKeyPrivate) {
-        return { venueId: v.id, available: false, liveBusyness: null, forecastBusyness: null };
-      }
+  // NYC-wide (hot): BestTime Venue Filter (Radar) over a NYC grid.
+  // This yields forecasted "busy now" values that are much more available than Live.
+  const nycCenters =
+    mode === "hot"
+      ? [
+          { lat: 40.758, lng: -73.985 }, // Midtown
+          { lat: 40.7306, lng: -73.9866 }, // Union Sq
+          { lat: 40.7128, lng: -74.006 }, // FiDi
+          { lat: 40.7812, lng: -73.9665 }, // UWS
+          { lat: 40.8075, lng: -73.9626 }, // Harlem
+          { lat: 40.745, lng: -73.948 }, // LIC
+          { lat: 40.764, lng: -73.923 }, // Astoria
+          { lat: 40.708, lng: -73.957 }, // Williamsburg
+          { lat: 40.6782, lng: -73.9442 }, // Brooklyn
+          { lat: 40.6501, lng: -73.9496 }, // Flatbush
+        ]
+      : [];
 
+  let hotspotPoints: Array<{ venueId: string; name: string; address: string | null; lat: number; lng: number; now: number }> = [];
+
+  if (mode === "hot") {
+    if (debug) {
+      // Debug: attempt a single Venue Filter call and return the raw payload head.
+      const c = { lat: 40.758, lng: -73.985 };
+      const btUrl = new URL("https://besttime.app/api/v1/venues/filter");
+      btUrl.searchParams.set("api_key_private", apiKeyPrivate);
+      btUrl.searchParams.set("busy_min", "25");
+      btUrl.searchParams.set("busy_max", "100");
+      btUrl.searchParams.set("types", "BAR,NIGHT_CLUB");
+      btUrl.searchParams.set("lat", String(c.lat));
+      btUrl.searchParams.set("lng", String(c.lng));
+      btUrl.searchParams.set("radius", "5000");
+      btUrl.searchParams.set("order_by", "now");
+      btUrl.searchParams.set("order", "desc");
+      btUrl.searchParams.set("foot_traffic", "both");
+      btUrl.searchParams.set("limit", String(limit));
+      btUrl.searchParams.set("page", "0");
+
+      const res = await fetch(btUrl.toString(), { headers: { accept: "application/json" }, cache: "no-store" });
+      const text = await res.text();
+      const redacted = btUrl.toString().replace(apiKeyPrivate, "REDACTED");
+      let parsed: any = null;
       try {
-        const r = await getBestTimeLiveByName({
-          apiKeyPrivate,
-          venueName: v.name,
-          venueAddress: v.address,
-        });
-        return {
-          venueId: v.id,
-          available: r.available,
-          liveBusyness: r.liveBusyness,
-          forecastBusyness: r.forecastBusyness,
-        };
+        parsed = JSON.parse(text);
       } catch {
-        return { venueId: v.id, available: false, liveBusyness: null, forecastBusyness: null };
+        parsed = null;
+      }
+      return NextResponse.json({
+        debug: true,
+        requestUrl: redacted,
+        status: res.status,
+        topKeys: parsed && typeof parsed === "object" ? Object.keys(parsed).slice(0, 30) : null,
+        venuesLen: parsed?.venues?.length ?? null,
+        window: parsed?.window ?? null,
+        firstVenueKeys: parsed?.venues?.[0] ? Object.keys(parsed.venues[0]).slice(0, 50) : null,
+        firstVenue: parsed?.venues?.[0] ?? null,
+        textHead: text.slice(0, 400),
+      });
+    }
+
+    const results = await Promise.all(
+      nycCenters.map((c) =>
+        getBestTimeVenueFilter({
+          apiKeyPrivate,
+          lat: c.lat,
+          lng: c.lng,
+          radiusMeters: 5000,
+          types: "BAR,NIGHT_CLUB",
+          footTraffic: "both",
+          busyMin: 25,
+          busyMax: 100,
+          orderBy: "now",
+          order: "desc",
+          limit: limit,
+        })
+      )
+    );
+
+    const dedup = new Map<string, { venueId: string; name: string; address: string | null; lat: number; lng: number; now: number }>();
+    for (const batch of results) {
+      for (const v of batch) {
+        if (!v.venueId || v.lat === null || v.lng === null || v.now === null) continue;
+        const existing = dedup.get(v.venueId);
+        const candidate = {
+          venueId: v.venueId,
+          name: v.name,
+          address: v.address,
+          lat: v.lat,
+          lng: v.lng,
+          now: v.now,
+        };
+        if (!existing || candidate.now > existing.now) dedup.set(v.venueId, candidate);
       }
     }
-  );
-
-  const liveById = new Map(live.map((x) => [x.venueId, x]));
-
-  const venuesWithLive = venues.map((v) => {
-    const l = liveById.get(v.id) ?? { available: false, liveBusyness: null, forecastBusyness: null };
-    return {
-      id: v.id,
-      name: v.name,
-      lat: v.lat,
-      lng: v.lng,
-      address: v.address,
-      neighborhood: v.neighborhood,
-      venueType: v.venueType,
-      meetingScore: v.meetingScore,
-      rating: v.rating,
-      noiseComplaints: v.noiseComplaints,
-      live: l,
-    };
-  });
-
-  // Sort by live busyness when available, otherwise by fallback signals
-  venuesWithLive.sort((a, b) => {
-    const aLive = a.live.liveBusyness ?? -1;
-    const bLive = b.live.liveBusyness ?? -1;
-    if (aLive !== bLive) return bLive - aLive;
-    const aFallback = (a.meetingScore ?? 0) + (a.noiseComplaints ?? 0) / 10 + (a.rating ?? 0);
-    const bFallback = (b.meetingScore ?? 0) + (b.noiseComplaints ?? 0) / 10 + (b.rating ?? 0);
-    return bFallback - aFallback;
-  });
+    hotspotPoints = Array.from(dedup.values()).sort((a, b) => b.now - a.now).slice(0, limit);
+  }
 
   // GeoJSON for map heat/markers
   const geojson = {
     type: "FeatureCollection" as const,
-    features: venuesWithLive
-      .filter((v) => v.live.liveBusyness !== null)
-      .map((v) => ({
+    features: hotspotPoints.map((v) => ({
         type: "Feature" as const,
         geometry: { type: "Point" as const, coordinates: [v.lng, v.lat] as [number, number] },
         properties: {
-          id: v.id,
+          id: v.venueId,
           name: v.name,
-          liveBusyness: v.live.liveBusyness,
-          available: v.live.available,
+          busyNow: v.now,
         },
       })),
   };
 
   return NextResponse.json({
     mode,
-    hasBestTimeKey: Boolean(apiKeyPrivate),
+    hasBestTimeKey: true,
     updatedAt: new Date().toISOString(),
-    venues: venuesWithLive,
+    venues: hotspotPoints.map((v) => ({
+      id: v.venueId,
+      name: v.name,
+      lat: v.lat,
+      lng: v.lng,
+      address: v.address ?? "",
+      neighborhood: "NYC",
+      venueType: null,
+      meetingScore: null,
+      rating: null,
+      noiseComplaints: null,
+      live: { available: false, liveBusyness: null, forecastBusyness: v.now },
+    })),
     geojson,
   });
 }

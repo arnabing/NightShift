@@ -220,7 +220,8 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
           visibility: "none",
         },
         paint: {
-          "heatmap-weight": ["/", ["get", "liveBusyness"], 100],
+          // Weight by forecasted busy-now 0..100 → 0..1
+          "heatmap-weight": ["/", ["get", "busyNow"], 100],
           "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 10, 0.8, 14, 1.2],
           "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 10, 18, 14, 42],
           "heatmap-opacity": 0.55,
@@ -549,7 +550,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
           <div className="absolute left-1/2 -translate-x-1/2 top-4 w-48 pointer-events-auto">
             <div className="relative">
           <div className="glass-light rounded-full shadow-lg flex items-center px-3 h-11">
-            <Search className="w-5 h-5 text-gray-400 mr-2 flex-shrink-0" />
+            <Search className="w-5 h-5 text-gray-400 mr-2 shrink-0" />
             <input
               type="text"
               placeholder="Search bars..."
@@ -822,7 +823,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
 
                   <div className="grid gap-3 mt-4">
                     {(liveData?.venues ?? []).slice(0, 60).map((v) => {
-                      const busy = v.live.liveBusyness;
+                      const busy = v.live.forecastBusyness;
                       const badge = busy === null ? "—" : `${busy}%`;
                       const badgeTone =
                         busy === null
