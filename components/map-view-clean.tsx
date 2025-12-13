@@ -344,39 +344,6 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
         },
       });
 
-      // Accuracy circle (Google Maps style)
-      newMap.addLayer({
-        id: "user-location-accuracy-fill",
-        type: "fill",
-        source: "user-location-accuracy",
-        paint: {
-          "fill-color": "rgba(59,130,246,0.18)", // blue-500
-          "fill-outline-color": "rgba(59,130,246,0.35)",
-        },
-      });
-      newMap.addLayer({
-        id: "user-location-accuracy-line",
-        type: "line",
-        source: "user-location-accuracy",
-        paint: {
-          "line-color": "rgba(59,130,246,0.45)",
-          "line-width": 2,
-        },
-      });
-
-      // Blue dot
-      newMap.addLayer({
-        id: "user-location-dot",
-        type: "circle",
-        source: "user-location-point",
-        paint: {
-          "circle-color": "#3b82f6",
-          "circle-radius": 7,
-          "circle-stroke-width": 3,
-          "circle-stroke-color": "#ffffff",
-        },
-      });
-
       // Layer 1: Cluster circles
       // Glass shadow underlay (helps legibility on light map)
       newMap.addLayer({
@@ -556,6 +523,37 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
         },
         "venue-labels"
       );
+
+      // User location (Google Maps style) — keep ABOVE venue layers so it never gets hidden by clusters/points.
+      newMap.addLayer({
+        id: "user-location-accuracy-fill",
+        type: "fill",
+        source: "user-location-accuracy",
+        paint: {
+          "fill-color": "rgba(59,130,246,0.18)", // blue-500
+          "fill-outline-color": "rgba(59,130,246,0.35)",
+        },
+      });
+      newMap.addLayer({
+        id: "user-location-accuracy-line",
+        type: "line",
+        source: "user-location-accuracy",
+        paint: {
+          "line-color": "rgba(59,130,246,0.45)",
+          "line-width": 2,
+        },
+      });
+      newMap.addLayer({
+        id: "user-location-dot",
+        type: "circle",
+        source: "user-location-point",
+        paint: {
+          "circle-color": "#3b82f6",
+          "circle-radius": 7,
+          "circle-stroke-width": 3,
+          "circle-stroke-color": "#ffffff",
+        },
+      });
 
       // Click on cluster → zoom in
       newMap.on("click", "clusters", (e) => {
@@ -879,6 +877,12 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
               try {
                 setLocating(true);
                 setLocationError(null);
+
+                // Geolocation requires a secure context (https) except on localhost.
+                if (!window.isSecureContext) {
+                  setLocationError("Location requires HTTPS. Open the secure site or add it to your home screen.");
+                  return;
+                }
 
                 // If the user previously blocked location, avoid a confusing no-op.
                 if ("permissions" in navigator && navigator.permissions?.query) {
