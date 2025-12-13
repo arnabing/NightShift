@@ -124,7 +124,6 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
 
   const selectVenue = (venue: VenueWithScore) => {
     setSelectedVenue(venue);
-    setDrawerMode("venues");
     setDrawerOpen(true);
 
     const m = map.current;
@@ -912,7 +911,6 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
                           <button
                             key={venue.id}
                             onClick={() => {
-                              setDrawerMode("venues");
                               selectVenue(venue);
                             }}
                             className="text-left p-4 rounded-lg border border-border/50 hover:bg-accent transition-all"
