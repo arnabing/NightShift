@@ -255,19 +255,20 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
           "circle-color": [
             "step",
             ["get", "point_count"],
-            "#94a3b8", // slate-400 for small
-            10, "#64748b", // slate-500 for medium
-            50, "#475569", // slate-600 for large
+            "rgba(255,255,255,0.55)", // glassy for small
+            10, "rgba(255,255,255,0.50)", // medium
+            50, "rgba(255,255,255,0.45)", // large
           ],
           "circle-radius": [
             "step",
             ["get", "point_count"],
-            18, // small clusters
-            10, 24, // medium
-            50, 32, // large
+            14, // small clusters
+            10, 18, // medium
+            50, 24, // large
           ],
-          "circle-stroke-width": 2,
-          "circle-stroke-color": "#ffffff",
+          "circle-opacity": 0.9,
+          "circle-stroke-width": 1.25,
+          "circle-stroke-color": "rgba(255,255,255,0.65)",
         },
       });
 
@@ -279,10 +280,13 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
         filter: ["has", "point_count"],
         layout: {
           "text-field": "{point_count_abbreviated}",
-          "text-size": 12,
+          "text-size": 11,
+          "text-font": ["DIN Offc Pro Medium", "Arial Unicode MS Bold"],
         },
         paint: {
-          "text-color": "#ffffff",
+          "text-color": "rgba(17,24,39,0.85)", // gray-900-ish
+          "text-halo-color": "rgba(255,255,255,0.55)",
+          "text-halo-width": 1.2,
         },
       });
 
