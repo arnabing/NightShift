@@ -65,6 +65,7 @@ type LiveResponse = {
   updatedAt: string;
   venues: LiveVenue[];
   geojson: GeoJSON.FeatureCollection;
+  scale?: { mode: "relative"; minBusyNow: number; maxBusyNow: number; count: number };
 };
 
 const moodLabels = {
@@ -366,8 +367,17 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
           visibility: "none",
         },
         paint: {
-          // Weight by forecasted busy-now 0..100 → 0..1
-          "heatmap-weight": ["/", ["get", "busyNow"], 100],
+          // Weight by busy-now (relative when available) so the map never "looks dead"
+          // when the API returns data but values are low.
+          "heatmap-weight": [
+            "max",
+            0.05,
+            [
+              "coalesce",
+              ["get", "heatWeight"],
+              ["/", ["get", "busyNow"], 100],
+            ],
+          ],
           "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 10, 0.8, 14, 1.2],
           "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 10, 18, 14, 42],
           "heatmap-opacity": 0.55,
@@ -377,6 +387,8 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
             ["heatmap-density"],
             0,
             "rgba(59,130,246,0)",
+            0.05,
+            "rgba(59,130,246,0.18)",
             0.2,
             "rgba(59,130,246,0.35)",
             0.4,
@@ -926,6 +938,19 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
               onClick={() => setLocationError(null)}
             >
               <X className="w-4 h-4 text-gray-400" />
+            </button>
+          </div>
+        )}
+
+        {liveEnabled && liveData?.hasBestTimeKey && (liveData.geojson?.features?.length ?? 0) === 0 && (
+          <div className="mt-2 pointer-events-auto glass-light rounded-xl shadow-lg flex items-center justify-between gap-3 px-3 py-2 text-xs text-muted-foreground">
+            <span>No live hotspots returned. Tap refresh.</span>
+            <button
+              className="p-1 hover:bg-black/5 rounded-full transition-colors"
+              onClick={() => fetchLive(liveMode)}
+              title="Refresh"
+            >
+              <RefreshCcw className="w-4 h-4 text-gray-500" />
             </button>
           </div>
         )}

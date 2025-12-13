@@ -243,6 +243,10 @@ export async function GET(req: Request) {
   }
 
   // GeoJSON for map heat/markers
+  const busyValues = hotspotPoints.map((v) => v.now).filter((n) => Number.isFinite(n));
+  const maxBusyNow = busyValues.length ? Math.max(...busyValues) : 0;
+  const minBusyNow = busyValues.length ? Math.min(...busyValues) : 0;
+
   const geojson = {
     type: "FeatureCollection" as const,
     features: hotspotPoints.map((v) => ({
@@ -252,6 +256,9 @@ export async function GET(req: Request) {
           id: v.venueId,
           name: v.name,
           busyNow: v.now,
+          // Relative scale so there's always visible color when data exists.
+          // Clamped floor prevents "looks empty" when all values are low.
+          heatWeight: maxBusyNow > 0 ? Math.max(0.12, v.now / maxBusyNow) : 0,
         },
       })),
   };
@@ -260,6 +267,12 @@ export async function GET(req: Request) {
     mode,
     hasBestTimeKey: true,
     updatedAt: new Date().toISOString(),
+    scale: {
+      mode: "relative" as const,
+      minBusyNow,
+      maxBusyNow,
+      count: hotspotPoints.length,
+    },
     venues: hotspotPoints.map((v) => ({
       id: v.venueId,
       name: v.name,
