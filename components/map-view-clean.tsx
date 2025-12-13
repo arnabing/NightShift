@@ -246,6 +246,25 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       });
 
       // Layer 1: Cluster circles
+      // Glass shadow underlay (helps legibility on light map)
+      newMap.addLayer({
+        id: "clusters-shadow",
+        type: "circle",
+        source: "venues",
+        filter: ["has", "point_count"],
+        paint: {
+          "circle-color": "rgba(0,0,0,0.18)",
+          "circle-radius": [
+            "step",
+            ["get", "point_count"],
+            16, // small clusters
+            10, 20, // medium
+            50, 26, // large
+          ],
+          "circle-blur": 0.6,
+        },
+      });
+
       newMap.addLayer({
         id: "clusters",
         type: "circle",
@@ -273,6 +292,25 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       });
 
       // Layer 2: Cluster count labels
+      // Text shadow underlay (pseudo drop-shadow)
+      newMap.addLayer({
+        id: "cluster-count-shadow",
+        type: "symbol",
+        source: "venues",
+        filter: ["has", "point_count"],
+        layout: {
+          "text-field": "{point_count_abbreviated}",
+          "text-size": 11,
+          "text-font": ["DIN Offc Pro Medium", "Arial Unicode MS Bold"],
+          "text-offset": [0, 0.08],
+        },
+        paint: {
+          "text-color": "rgba(0,0,0,0.35)",
+          "text-halo-color": "rgba(0,0,0,0)",
+          "text-halo-width": 0,
+        },
+      });
+
       newMap.addLayer({
         id: "cluster-count",
         type: "symbol",
@@ -284,9 +322,10 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
           "text-font": ["DIN Offc Pro Medium", "Arial Unicode MS Bold"],
         },
         paint: {
-          "text-color": "rgba(17,24,39,0.85)", // gray-900-ish
-          "text-halo-color": "rgba(255,255,255,0.55)",
-          "text-halo-width": 1.2,
+          "text-color": "rgba(17,24,39,0.95)", // darker for contrast
+          "text-halo-color": "rgba(255,255,255,0.75)",
+          "text-halo-width": 1.4,
+          "text-halo-blur": 0.6,
         },
       });
 
