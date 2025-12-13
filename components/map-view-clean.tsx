@@ -91,6 +91,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
   const [liveData, setLiveData] = useState<LiveResponse | null>(null);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [userLocationAccuracy, setUserLocationAccuracy] = useState<number | null>(null);
+  const [userLocationUpdatedAt, setUserLocationUpdatedAt] = useState<number | null>(null);
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [hasRequestedLocation, setHasRequestedLocation] = useState(false);
@@ -244,9 +245,19 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
 
   const requestAndCenterOnLocation = async () => {
     try {
-      setLocating(true);
       setHasRequestedLocation(true);
       setLocationError(null);
+
+      // If we already have a recent fix, just recenter (fast + battery friendly).
+      if (userLocation && userLocationUpdatedAt && Date.now() - userLocationUpdatedAt < 60_000) {
+        map.current?.flyTo({
+          center: [userLocation.lng, userLocation.lat],
+          zoom: Math.max(map.current?.getZoom() ?? 11, 14),
+        });
+        return;
+      }
+
+      setLocating(true);
 
       // Geolocation requires a secure context (https) except on localhost.
       if (!window.isSecureContext) {
@@ -260,6 +271,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       const loc = await locPromise;
       setUserLocation({ lat: loc.lat, lng: loc.lng });
       setUserLocationAccuracy(loc.accuracy);
+      setUserLocationUpdatedAt(Date.now());
 
       // If Radar is active, refresh live data around you
       if (liveEnabled && liveMode === "radar") {
@@ -597,6 +609,17 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
         paint: {
           "line-color": "rgba(59,130,246,0.45)",
           "line-width": 2,
+        },
+      });
+      // Soft halo under the dot (improves visibility on busy maps)
+      newMap.addLayer({
+        id: "user-location-halo",
+        type: "circle",
+        source: "user-location-point",
+        paint: {
+          "circle-color": "rgba(59,130,246,0.25)",
+          "circle-radius": 16,
+          "circle-stroke-width": 0,
         },
       });
       newMap.addLayer({
