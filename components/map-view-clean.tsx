@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Mood } from "@/lib/types";
 import { ArrowLeft, MapPin, Flame, RefreshCcw, Map as MapIcon } from "lucide-react";
 import type { Venue as PrismaVenue } from "@prisma/client";
@@ -14,7 +14,7 @@ import {
   DrawerTitle,
   DrawerTrigger,
 } from "@/components/ui/drawer";
-import { Search, X } from "lucide-react";
+import { Search, X, LocateFixed, Loader2 } from "lucide-react";
 
 interface MapViewProps {
   mood: Mood;
@@ -89,6 +89,10 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
   const [liveError, setLiveError] = useState<string | null>(null);
   const [liveData, setLiveData] = useState<LiveResponse | null>(null);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [userLocationAccuracy, setUserLocationAccuracy] = useState<number | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [hasRequestedLocation, setHasRequestedLocation] = useState(false);
   const [placesVisible, setPlacesVisible] = useState(true);
   const [enabledFactors, setEnabledFactors] = useState<EnabledFactors>({
     genderBalance: true,
@@ -101,8 +105,49 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
   const map = useRef<mapboxgl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const venuesRef = useRef<VenueWithScore[]>([]);
-  const popupRef = useRef<mapboxgl.Popup | null>(null);
-  const markerRef = useRef<mapboxgl.Marker | null>(null);
+
+  const venuesWithScores = useMemo(() => {
+    return venues.map((venue) => {
+      const scoreData: VenueScoreData = {
+        venueType: venue.venueType ?? undefined,
+        rating: venue.rating ?? undefined,
+        noiseComplaints: venue.noiseComplaints ?? undefined,
+        genderRatio: venue.genderRatio as any,
+        reviewSentiment: venue.reviewSentiment as any,
+      };
+
+      const scoreBreakdown = calculateDynamicMeetingScore(scoreData, enabledFactors);
+
+      return {
+        ...venue,
+        meetingScore: scoreBreakdown.total,
+        scoreBreakdown,
+      };
+    });
+  }, [venues, enabledFactors]);
+
+  const selectVenue = (venue: VenueWithScore) => {
+    setSelectedVenue(venue);
+    setDrawerOpen(true);
+
+    const m = map.current;
+    if (m) {
+      const currentZoom = m.getZoom();
+      m.flyTo({
+        center: [venue.coordinates.lng, venue.coordinates.lat],
+        zoom: Math.max(currentZoom, 14),
+      });
+    }
+  };
+
+  const clearSearchAndSelection = () => {
+    setSearchQuery("");
+    setSearchResults([]);
+    if (selectedVenue) {
+      setSelectedVenue(null);
+      setDrawerOpen(false);
+    }
+  };
 
   async function fetchLive(mode: "hot" | "radar") {
     try {
@@ -132,15 +177,59 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
     }
   }
 
-  function requestLocation(): Promise<{ lat: number; lng: number }> {
+  function requestLocation(): Promise<{ lat: number; lng: number; accuracy: number | null }> {
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) return reject(new Error("Geolocation not supported"));
       navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        (pos) =>
+          resolve({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: typeof pos.coords.accuracy === "number" ? pos.coords.accuracy : null,
+          }),
         (err) => reject(new Error(err.message || "Location permission denied")),
         { enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 }
       );
     });
+  }
+
+  function makeCirclePolygon(lng: number, lat: number, radiusMeters: number, steps = 64): GeoJSON.Feature<GeoJSON.Polygon> {
+    // Approximate circle on Earth surface (good enough for 5–2000m)
+    const earthRadius = 6378137; // meters
+    const toRad = (d: number) => (d * Math.PI) / 180;
+    const toDeg = (r: number) => (r * 180) / Math.PI;
+
+    const latRad = toRad(lat);
+    const lngRad = toRad(lng);
+    const angular = radiusMeters / earthRadius;
+
+    const coords: [number, number][] = [];
+    for (let i = 0; i <= steps; i++) {
+      const bearing = (2 * Math.PI * i) / steps;
+      const sinLat = Math.sin(latRad);
+      const cosLat = Math.cos(latRad);
+      const sinAngular = Math.sin(angular);
+      const cosAngular = Math.cos(angular);
+
+      const lat2 = Math.asin(sinLat * cosAngular + cosLat * sinAngular * Math.cos(bearing));
+      const lng2 =
+        lngRad +
+        Math.atan2(
+          Math.sin(bearing) * sinAngular * cosLat,
+          cosAngular - sinLat * Math.sin(lat2)
+        );
+
+      coords.push([toDeg(lng2), toDeg(lat2)]);
+    }
+
+    return {
+      type: "Feature",
+      properties: {},
+      geometry: {
+        type: "Polygon",
+        coordinates: [coords],
+      },
+    };
   }
 
   // Heatmap-first UX: fetch hotspots on load
@@ -150,6 +239,52 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
     fetchLive("hot");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const requestAndCenterOnLocation = async () => {
+    try {
+      setLocating(true);
+      setHasRequestedLocation(true);
+      setLocationError(null);
+
+      // Geolocation requires a secure context (https) except on localhost.
+      if (!window.isSecureContext) {
+        setLocationError("Location requires HTTPS. Open the secure site or add it to your home screen.");
+        return;
+      }
+
+      // If the user previously blocked location, avoid a confusing no-op.
+      if ("permissions" in navigator && navigator.permissions?.query) {
+        try {
+          const status = await navigator.permissions.query({ name: "geolocation" as PermissionName });
+          if (status.state === "denied") {
+            setLocationError("Location is blocked. Enable it in your browser/site settings.");
+            return;
+          }
+        } catch {
+          // permissions API is inconsistent across browsers; ignore and fall back to prompting
+        }
+      }
+
+      const loc = await requestLocation();
+      setUserLocation({ lat: loc.lat, lng: loc.lng });
+      setUserLocationAccuracy(loc.accuracy);
+
+      // If Radar is active, refresh live data around you
+      if (liveEnabled && liveMode === "radar") {
+        await fetchLive("radar");
+      }
+
+      map.current?.flyTo({
+        center: [loc.lng, loc.lat],
+        zoom: Math.max(map.current?.getZoom() ?? 11, 14),
+      });
+    } catch (e) {
+      console.error("Failed to get location:", e);
+      setLocationError(e instanceof Error ? e.message : "Failed to get location");
+    } finally {
+      setLocating(false);
+    }
+  };
 
   // Fetch ALL venues (base layer shows everything, not filtered by mood)
   useEffect(() => {
@@ -206,6 +341,16 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
 
       // Live heat source (not clustered)
       newMap.addSource("live-venues", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+
+      // User location (blue dot + accuracy circle)
+      newMap.addSource("user-location-point", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      newMap.addSource("user-location-accuracy", {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
       });
@@ -407,6 +552,56 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
         },
       });
 
+      // Selected venue highlight ring (kept visible even if Places toggled off)
+      // Inserted right below labels so text remains readable.
+      newMap.addLayer(
+        {
+          id: "selected-venue-ring",
+          type: "circle",
+          source: "venues",
+          filter: ["all", ["!", ["has", "point_count"]], ["==", ["get", "id"], ""]],
+          paint: {
+            "circle-color": "rgba(0,0,0,0)",
+            "circle-radius": 18,
+            "circle-stroke-width": 4,
+            "circle-stroke-color": "#a855f7",
+            "circle-opacity": 1,
+          },
+        },
+        "venue-labels"
+      );
+
+      // User location (Google Maps style) — keep ABOVE venue layers so it never gets hidden by clusters/points.
+      newMap.addLayer({
+        id: "user-location-accuracy-fill",
+        type: "fill",
+        source: "user-location-accuracy",
+        paint: {
+          "fill-color": "rgba(59,130,246,0.18)", // blue-500
+          "fill-outline-color": "rgba(59,130,246,0.35)",
+        },
+      });
+      newMap.addLayer({
+        id: "user-location-accuracy-line",
+        type: "line",
+        source: "user-location-accuracy",
+        paint: {
+          "line-color": "rgba(59,130,246,0.45)",
+          "line-width": 2,
+        },
+      });
+      newMap.addLayer({
+        id: "user-location-dot",
+        type: "circle",
+        source: "user-location-point",
+        paint: {
+          "circle-color": "#3b82f6",
+          "circle-radius": 7,
+          "circle-stroke-width": 3,
+          "circle-stroke-color": "#ffffff",
+        },
+      });
+
       // Click on cluster → zoom in
       newMap.on("click", "clusters", (e) => {
         const features = newMap.queryRenderedFeatures(e.point, { layers: ["clusters"] });
@@ -431,31 +626,10 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
         if (!feature) return;
 
         const props = feature.properties as any;
-        const coords = (feature.geometry as GeoJSON.Point).coordinates;
 
         // Find full venue data from ref (avoids stale closure)
         const venue = venuesRef.current.find((v) => v.id === props.id);
-        if (venue) {
-          // Close any open popup and marker
-          if (popupRef.current) {
-            popupRef.current.remove();
-            popupRef.current = null;
-          }
-          if (markerRef.current) {
-            markerRef.current.remove();
-            markerRef.current = null;
-          }
-
-          setSelectedVenue(venue);
-          setDrawerMode("venues");
-          setDrawerOpen(true);
-          // Only zoom in if needed, never zoom out
-          const currentZoom = newMap.getZoom();
-          newMap.flyTo({
-            center: coords as [number, number],
-            zoom: Math.max(currentZoom, 14),
-          });
-        }
+        if (venue) selectVenue(venue);
       });
 
       // Cursor changes
@@ -481,36 +655,12 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
   }, []);
 
   // Recalculate venue scores based on enabled factors
-  const getVenuesWithDynamicScores = () => {
-    return venues.map((venue) => {
-      // Convert venue to VenueScoreData format (null to undefined conversion)
-      const scoreData: VenueScoreData = {
-        venueType: venue.venueType ?? undefined,
-        rating: venue.rating ?? undefined,
-        noiseComplaints: venue.noiseComplaints ?? undefined,
-        genderRatio: venue.genderRatio as any,
-        reviewSentiment: venue.reviewSentiment as any,
-      };
-
-      // Calculate dynamic score based on enabled factors
-      const scoreBreakdown = calculateDynamicMeetingScore(scoreData, enabledFactors);
-
-      return {
-        ...venue,
-        meetingScore: scoreBreakdown.total,
-        scoreBreakdown,
-      };
-    });
-  };
-
   // Update GeoJSON source when venues change
   useEffect(() => {
     if (!map.current || !mapLoaded || venues.length === 0) return;
 
     const source = map.current.getSource("venues") as mapboxgl.GeoJSONSource;
     if (!source) return;
-
-    const venuesWithScores = getVenuesWithDynamicScores();
 
     // Update ref for click handler (avoids stale closure)
     venuesRef.current = venuesWithScores;
@@ -548,7 +698,16 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       });
       map.current.fitBounds(bounds, { padding: 50, maxZoom: 13 });
     }
-  }, [venues, enabledFactors, mapLoaded]);
+  }, [venuesWithScores, mapLoaded, selectedVenue, venues.length]);
+
+  // Keep the selected ring synced with the selected venue (works for search + taps)
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+    if (!map.current.getLayer("selected-venue-ring")) return;
+
+    const id = selectedVenue?.id ?? "";
+    map.current.setFilter("selected-venue-ring", ["all", ["!", ["has", "point_count"]], ["==", ["get", "id"], id]]);
+  }, [mapLoaded, selectedVenue]);
 
   // Update Live GeoJSON source + heat layer visibility
   useEffect(() => {
@@ -563,6 +722,44 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       map.current.setLayoutProperty("live-heat", "visibility", visibility);
     }
   }, [mapLoaded, liveData, liveEnabled]);
+
+  // Update user location sources (dot + accuracy circle)
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+    const pointSrc = map.current.getSource("user-location-point") as mapboxgl.GeoJSONSource | undefined;
+    const accuracySrc = map.current.getSource("user-location-accuracy") as mapboxgl.GeoJSONSource | undefined;
+    if (!pointSrc || !accuracySrc) return;
+
+    if (!userLocation) {
+      pointSrc.setData({ type: "FeatureCollection", features: [] });
+      accuracySrc.setData({ type: "FeatureCollection", features: [] });
+      return;
+    }
+
+    pointSrc.setData({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          properties: {},
+          geometry: {
+            type: "Point",
+            coordinates: [userLocation.lng, userLocation.lat],
+          },
+        },
+      ],
+    });
+
+    const accuracy = userLocationAccuracy ?? 0;
+    if (accuracy > 0) {
+      accuracySrc.setData({
+        type: "FeatureCollection",
+        features: [makeCirclePolygon(userLocation.lng, userLocation.lat, accuracy)],
+      });
+    } else {
+      accuracySrc.setData({ type: "FeatureCollection", features: [] });
+    }
+  }, [mapLoaded, userLocation, userLocationAccuracy]);
 
   // Places toggle: show/hide the venue dot layers so the heatmap stays legible
   useEffect(() => {
@@ -625,11 +822,13 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
                 const query = e.target.value;
                 setSearchQuery(query);
                 if (query.length > 0) {
-                  const filtered = venues.filter((v) =>
-                    v.name.toLowerCase().includes(query.toLowerCase()) ||
-                    v.neighborhood.toLowerCase().includes(query.toLowerCase())
-                  );
-                  setSearchResults(filtered.slice(0, 5));
+                  const q = query.toLowerCase();
+                  const filtered = venuesWithScores.filter((v) => {
+                    const name = v.name.toLowerCase();
+                    const nbh = v.neighborhood.toLowerCase();
+                    return name.includes(q) || nbh.includes(q);
+                  });
+                  setSearchResults(filtered.slice(0, 6));
                 } else {
                   setSearchResults([]);
                 }
@@ -637,11 +836,10 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
               className="flex-1 bg-transparent outline-none text-foreground placeholder:text-gray-400 text-sm"
               style={{ pointerEvents: 'auto' }}
             />
-            {searchQuery && (
+            {(searchQuery || selectedVenue) && (
               <button
                 onClick={() => {
-                  setSearchQuery("");
-                  setSearchResults([]);
+                  clearSearchAndSelection();
                 }}
                 className="p-1 hover:bg-black/5 rounded-full transition-colors"
                 style={{ pointerEvents: 'auto' }}
@@ -658,78 +856,9 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
                 <button
                   key={venue.id}
                   onClick={() => {
-                    setSelectedVenue(venue);
                     setSearchQuery("");
                     setSearchResults([]);
-
-                    // Fly to venue
-                    map.current?.flyTo({
-                      center: [venue.coordinates.lng, venue.coordinates.lat],
-                      zoom: 15,
-                    });
-
-                    // Remove existing popup and marker
-                    if (popupRef.current) {
-                      popupRef.current.remove();
-                    }
-                    if (markerRef.current) {
-                      markerRef.current.remove();
-                    }
-
-                    // Create a custom pin marker at the venue location
-                    const markerEl = document.createElement('div');
-                    markerEl.className = 'selected-marker';
-                    markerEl.innerHTML = `
-                      <div style="position: relative; width: 40px; height: 48px;">
-                        <svg width="40" height="48" viewBox="0 0 40 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-                          <defs>
-                            <linearGradient id="pin-gradient" x1="0" y1="0" x2="0" y2="48">
-                              <stop offset="0%" stop-color="#a855f7"/>
-                              <stop offset="100%" stop-color="#7c3aed"/>
-                            </linearGradient>
-                            <filter id="shadow" x="-20%" y="-10%" width="140%" height="130%">
-                              <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.3"/>
-                            </filter>
-                          </defs>
-                          <path d="M20 0C9 0 0 9 0 20c0 13 20 28 20 28s20-15 20-28C40 9 31 0 20 0z" fill="url(#pin-gradient)" filter="url(#shadow)"/>
-                          <circle cx="20" cy="17" r="10" fill="white"/>
-                        </svg>
-                        <span style="position: absolute; top: 8px; left: 50%; transform: translateX(-50%); font-size: 16px;">🍸</span>
-                      </div>
-                    `;
-                    markerEl.style.cssText = `cursor: pointer;`;
-                    markerEl.addEventListener('click', () => {
-                      // Just open drawer, keep marker visible
-                      setDrawerOpen(true);
-                    });
-
-                    markerRef.current = new mapboxgl.Marker({
-                      element: markerEl,
-                      anchor: 'bottom'  // Pin tip at exact location
-                    })
-                      .setLngLat([venue.coordinates.lng, venue.coordinates.lat])
-                      .addTo(map.current!);
-
-                    // Show popup with venue name (clickable to open drawer)
-                    const popupContent = document.createElement('div');
-                    popupContent.innerHTML = `
-                      <div style="padding: 10px 14px; font-weight: 600; font-size: 14px; cursor: pointer;">
-                        ${venue.name}
-                      </div>
-                    `;
-                    popupContent.addEventListener('click', () => {
-                      setDrawerOpen(true);
-                    });
-
-                    popupRef.current = new mapboxgl.Popup({
-                      closeButton: false,
-                      closeOnClick: false,
-                      offset: [0, -48],  // Position above the 48px tall marker
-                      className: 'venue-popup',
-                    })
-                      .setLngLat([venue.coordinates.lng, venue.coordinates.lat])
-                      .setDOMContent(popupContent)
-                      .addTo(map.current!);
+                    selectVenue(venue);
                   }}
                   className="w-full px-4 py-3 text-left hover:bg-black/5 transition-colors border-b border-black/5 last:border-b-0"
                 >
@@ -788,13 +917,57 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
             <RefreshCcw className="w-4 h-4" />
           </button>
         </div>
+
+        {locationError && (
+          <div className="mt-2 pointer-events-auto glass-light rounded-xl shadow-lg flex items-center justify-between gap-3 px-3 py-2 text-xs text-muted-foreground">
+            <span>{locationError}</span>
+            <button
+              className="p-1 hover:bg-black/5 rounded-full transition-colors"
+              onClick={() => setLocationError(null)}
+            >
+              <X className="w-4 h-4 text-gray-400" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Floating GPS button (Google Maps style) */}
+      <div className="absolute bottom-0 right-0 z-40 pb-[calc(env(safe-area-inset-bottom)+5.5rem)] pr-[calc(env(safe-area-inset-right)+1rem)] pointer-events-none">
+        <button
+          type="button"
+          title="Current location"
+          onClick={requestAndCenterOnLocation}
+          disabled={locating}
+          className={[
+            "pointer-events-auto",
+            "glass-light",
+            "rounded-full",
+            "p-3",
+            "shadow-xl",
+            "border",
+            "border-black/5",
+            "hover:bg-white/80",
+            "active:scale-95",
+            "transition-all",
+            "disabled:opacity-60",
+            // Slow blink until first tap (permission prompt trigger)
+            !hasRequestedLocation ? "animate-[pulse_2.8s_ease-in-out_infinite]" : "",
+          ].join(" ")}
+        >
+          {locating ? <Loader2 className="w-5 h-5 animate-spin" /> : <LocateFixed className="w-5 h-5" />}
+        </button>
       </div>
 
       {/* Drawer component - slides up from bottom */}
-      <Drawer open={drawerOpen} onOpenChange={(open) => {
+      <Drawer
+        open={drawerOpen}
+        modal={false}
+        shouldScaleBackground={false}
+        onOpenChange={(open) => {
         console.log("🗂️ Drawer state changing to:", open);
         setDrawerOpen(open);
-      }}>
+      }}
+      >
         <DrawerTrigger asChild>
           <div className="absolute inset-x-0 bottom-0 z-50 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pointer-events-none flex justify-center">
             <button className="glass rounded-full px-6 py-3 hover:bg-white/95 transition-all shadow-xl pointer-events-auto">
@@ -939,7 +1112,8 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
                 </DrawerHeader>
                 <div className="overflow-y-auto px-4 pb-8">
                   <div className="grid gap-3">
-                    {getVenuesWithDynamicScores()
+                    {venuesWithScores
+                      .slice()
                       .sort((a, b) => (b.meetingScore || 0) - (a.meetingScore || 0))
                       .map((venue, index) => {
                         const tier = venue.meetingScore ? getScoreTier(venue.meetingScore) : null;
@@ -954,12 +1128,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
                           <button
                             key={venue.id}
                             onClick={() => {
-                              setDrawerMode("venues");
-                              setSelectedVenue(venue);
-                              map.current?.flyTo({
-                                center: [venue.coordinates.lng, venue.coordinates.lat],
-                                zoom: 14,
-                              });
+                              selectVenue(venue);
                             }}
                             className="text-left p-4 rounded-lg border border-border/50 hover:bg-accent transition-all"
                           >

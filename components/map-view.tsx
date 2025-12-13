@@ -611,7 +611,7 @@ export function MapView({ mood, onBack }: MapViewProps) {
                 <div className="pt-2 p-3 rounded-lg bg-primary/5 border border-primary/20">
                   <div className="flex items-center gap-2 mb-1">
                     <TrendingUp className="w-4 h-4 text-primary" />
-                    <span className="text-sm font-medium">Tonight's Prediction</span>
+                    <span className="text-sm font-medium">Tonight&apos;s Prediction</span>
                   </div>
                   <p className={`text-lg font-semibold ${
                     selectedVenue.activityPrediction.prediction === "High"
