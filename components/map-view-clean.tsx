@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Mood } from "@/lib/types";
-import { ArrowLeft, MapPin, Layers, Radar, Flame, RefreshCcw } from "lucide-react";
+import { ArrowLeft, MapPin, Flame, RefreshCcw, Map as MapIcon } from "lucide-react";
 import type { Venue as PrismaVenue } from "@prisma/client";
 import { getScoreTier, calculateDynamicMeetingScore, type EnabledFactors, type VenueScoreData } from "@/lib/scoring";
 import mapboxgl from "mapbox-gl";
@@ -14,8 +14,6 @@ import {
   DrawerTitle,
   DrawerTrigger,
 } from "@/components/ui/drawer";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 import { Search, X } from "lucide-react";
 
 interface MapViewProps {
@@ -83,15 +81,15 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
   const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerMode, setDrawerMode] = useState<"venues" | "live">("venues");
-  const [layerFilterOpen, setLayerFilterOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<VenueWithScore[]>([]);
-  const [liveEnabled, setLiveEnabled] = useState(false);
+  const [liveEnabled, setLiveEnabled] = useState(true);
   const [liveMode, setLiveMode] = useState<"hot" | "radar">("hot");
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
   const [liveData, setLiveData] = useState<LiveResponse | null>(null);
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [placesVisible, setPlacesVisible] = useState(false);
   const [enabledFactors, setEnabledFactors] = useState<EnabledFactors>({
     genderBalance: true,
     socialVibe: true,
@@ -113,7 +111,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
 
       const qs = new URLSearchParams();
       qs.set("mode", mode);
-      qs.set("limit", mode === "radar" ? "50" : "140");
+      qs.set("limit", mode === "radar" ? "80" : "250");
 
       if (mode === "radar") {
         const loc = userLocation;
@@ -144,6 +142,14 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       );
     });
   }
+
+  // Heatmap-first UX: fetch hotspots on load
+  useEffect(() => {
+    setLiveMode("hot");
+    setDrawerMode("live");
+    fetchLive("hot");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Fetch ALL venues (base layer shows everything, not filtered by mood)
   useEffect(() => {
@@ -491,6 +497,18 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
     }
   }, [mapLoaded, liveData, liveEnabled]);
 
+  // Places toggle: show/hide the venue dot layers so the heatmap stays legible
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+    const visibility = placesVisible ? "visible" : "none";
+    const layers = ["clusters", "cluster-count", "unclustered-point", "venue-labels"] as const;
+    for (const layerId of layers) {
+      if (map.current.getLayer(layerId)) {
+        map.current.setLayoutProperty(layerId, "visibility", visibility);
+      }
+    }
+  }, [mapLoaded, placesVisible]);
+
   const getPriceSymbol = (level: number) => "$".repeat(level);
 
   console.log("🎨 MapViewClean render - venues:", venues.length, "loading:", loading, "drawerOpen:", drawerOpen);
@@ -656,81 +674,6 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
           )}
             </div>
           </div>
-
-          {/* Layer filter button - Google Maps style */}
-          <div className="absolute right-4 top-4 pointer-events-auto">
-            <button
-              onClick={() => setLayerFilterOpen(!layerFilterOpen)}
-              className="glass-light rounded-full p-3 hover:bg-white/90 transition-all shadow-lg"
-              style={{ pointerEvents: 'auto' }}
-            >
-              <Layers className="w-5 h-5 text-foreground" />
-            </button>
-
-            {/* Layer filter dropdown */}
-            {layerFilterOpen && (
-              <div className="absolute top-14 right-0 glass rounded-lg p-4 shadow-xl min-w-[260px]" style={{ pointerEvents: 'auto' }}>
-                <div className="space-y-3">
-                  <div className="text-sm font-semibold text-foreground mb-3">Score Factors</div>
-
-                  <div className="flex items-center gap-3">
-                    <Checkbox
-                      id="gender"
-                      checked={enabledFactors.genderBalance}
-                      onCheckedChange={(checked) => setEnabledFactors({ ...enabledFactors, genderBalance: !!checked })}
-                    />
-                    <Label htmlFor="gender" className="text-sm text-foreground cursor-pointer">
-                      Gender Demographics
-                    </Label>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <Checkbox
-                      id="vibe"
-                      checked={enabledFactors.socialVibe}
-                      onCheckedChange={(checked) => setEnabledFactors({ ...enabledFactors, socialVibe: !!checked })}
-                    />
-                    <Label htmlFor="vibe" className="text-sm text-foreground cursor-pointer">
-                      Social Atmosphere
-                    </Label>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <Checkbox
-                      id="quality"
-                      checked={enabledFactors.quality}
-                      onCheckedChange={(checked) => setEnabledFactors({ ...enabledFactors, quality: !!checked })}
-                    />
-                    <Label htmlFor="quality" className="text-sm text-foreground cursor-pointer">
-                      Quality Ratings
-                    </Label>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <Checkbox
-                      id="venueType"
-                      checked={enabledFactors.socialibility}
-                      onCheckedChange={(checked) => setEnabledFactors({ ...enabledFactors, socialibility: !!checked })}
-                    />
-                    <Label htmlFor="venueType" className="text-sm text-foreground cursor-pointer">
-                      Venue Type
-                    </Label>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <Checkbox
-                      id="activity"
-                      checked={enabledFactors.activityLevel}
-                      onCheckedChange={(checked) => setEnabledFactors({ ...enabledFactors, activityLevel: !!checked })}
-                    />
-                    <Label htmlFor="activity" className="text-sm text-foreground cursor-pointer">
-                      NYC 311 Activity
-                    </Label>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
         </div>
       </div>
 
@@ -754,7 +697,17 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
             }}
           >
             <Flame className="w-4 h-4" />
-            Live
+            Hotspots
+          </button>
+
+          <button
+            className={`rounded-full px-3 py-2 text-xs font-semibold transition-all flex items-center gap-2 ${
+              placesVisible ? "bg-white/90" : "hover:bg-white/70"
+            }`}
+            onClick={() => setPlacesVisible((v) => !v)}
+          >
+            <MapIcon className="w-4 h-4" />
+            Places
           </button>
 
           <button
@@ -766,31 +719,6 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
             }}
           >
             <RefreshCcw className="w-4 h-4" />
-          </button>
-
-          <button
-            className="rounded-full px-3 py-2 text-xs font-semibold hover:bg-white/70 transition-all flex items-center gap-2 disabled:opacity-50"
-            disabled={!liveEnabled || liveLoading}
-            onClick={async () => {
-              if (!liveEnabled) return;
-              try {
-                const loc = userLocation ?? (await requestLocation());
-                setUserLocation(loc);
-                setLiveMode("radar");
-                setDrawerMode("live");
-                setSelectedVenue(null);
-                setDrawerOpen(true);
-                await fetchLive("radar");
-              } catch (e) {
-                setLiveError(e instanceof Error ? e.message : "Location unavailable");
-                setDrawerMode("live");
-                setSelectedVenue(null);
-                setDrawerOpen(true);
-              }
-            }}
-          >
-            <Radar className="w-4 h-4" />
-            Radar
           </button>
         </div>
       </div>
