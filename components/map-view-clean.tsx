@@ -189,7 +189,8 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
             accuracy: typeof pos.coords.accuracy === "number" ? pos.coords.accuracy : null,
           }),
         (err) => reject(new Error(err.message || "Location permission denied")),
-        { enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 }
+        // Battery-friendly: allow cached location; only one-shot on demand.
+        { enableHighAccuracy: true, timeout: 8_000, maximumAge: 120_000 }
       );
     });
   }
@@ -253,20 +254,10 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
         return;
       }
 
-      // If the user previously blocked location, avoid a confusing no-op.
-      if ("permissions" in navigator && navigator.permissions?.query) {
-        try {
-          const status = await navigator.permissions.query({ name: "geolocation" as PermissionName });
-          if (status.state === "denied") {
-            setLocationError("Location is blocked. Enable it in your browser/site settings.");
-            return;
-          }
-        } catch {
-          // permissions API is inconsistent across browsers; ignore and fall back to prompting
-        }
-      }
-
-      const loc = await requestLocation();
+      // IMPORTANT: Trigger geolocation immediately on user tap.
+      // Some browsers drop the permission prompt if you await before calling getCurrentPosition.
+      const locPromise = requestLocation();
+      const loc = await locPromise;
       setUserLocation({ lat: loc.lat, lng: loc.lng });
       setUserLocationAccuracy(loc.accuracy);
 
@@ -281,7 +272,13 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       });
     } catch (e) {
       console.error("Failed to get location:", e);
-      setLocationError(e instanceof Error ? e.message : "Failed to get location");
+      const msg = e instanceof Error ? e.message : "Failed to get location";
+      // Unify copy for blocked/denied so it’s actionable.
+      if (msg.toLowerCase().includes("denied") || msg.toLowerCase().includes("permission")) {
+        setLocationError("Location is blocked. Enable it in your browser/site settings.");
+      } else {
+        setLocationError(msg);
+      }
     } finally {
       setLocating(false);
     }
@@ -957,7 +954,14 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       </div>
 
       {/* Floating GPS button (Google Maps style) */}
-      <div className="absolute bottom-0 right-0 z-40 pb-[calc(env(safe-area-inset-bottom)+5.5rem)] pr-[calc(env(safe-area-inset-right)+1rem)] pointer-events-none">
+      <div
+        className="absolute bottom-0 right-0 z-[60] pr-[calc(env(safe-area-inset-right)+1rem)] pointer-events-none"
+        style={{
+          paddingBottom: drawerOpen
+            ? "calc(50vh + env(safe-area-inset-bottom) + 1rem)"
+            : "calc(env(safe-area-inset-bottom) + 5.5rem)",
+        }}
+      >
         <button
           type="button"
           title="Current location"
