@@ -194,7 +194,14 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
             lng: pos.coords.longitude,
             accuracy: typeof pos.coords.accuracy === "number" ? pos.coords.accuracy : null,
           }),
-        (err) => reject(new Error(err.message || "Location permission denied")),
+        (err) => {
+          // Normalize common denial messages so we can show a friendly UX.
+          if (err && (err as any).code === 1) {
+            // PERMISSION_DENIED
+            return reject(new Error("Location permission denied"));
+          }
+          return reject(new Error(err.message || "Location permission denied"));
+        },
         // One-shot on demand. Defaults are battery-friendly unless overridden.
         {
           enableHighAccuracy: opts?.enableHighAccuracy ?? true,
@@ -304,11 +311,12 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
         zoom: Math.max(map.current?.getZoom() ?? 11, 14),
       });
     } catch (e) {
-      console.error("Failed to get location:", e);
       const msg = e instanceof Error ? e.message : "Failed to get location";
       // Unify copy for blocked/denied so it’s actionable.
       if (msg.toLowerCase().includes("denied") || msg.toLowerCase().includes("permission")) {
-        setLocationError("Location is blocked. Enable it in your browser/site settings.");
+        setLocationHint(
+          "Location is off. Hotspots still work. Enable location in iOS Settings → Privacy & Security → Location Services → Safari Websites → While Using (or Ask), then try again."
+        );
       } else {
         setLocationError(msg);
       }
