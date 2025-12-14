@@ -93,10 +93,10 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
   const [userLocationAccuracy, setUserLocationAccuracy] = useState<number | null>(null);
   const [userLocationUpdatedAt, setUserLocationUpdatedAt] = useState<number | null>(null);
   const [locating, setLocating] = useState(false);
-  const [locationError, setLocationError] = useState<string | null>(null);
-  const [locationHint, setLocationHint] = useState<string | null>(null);
   const [hasRequestedLocation, setHasRequestedLocation] = useState(false);
   const [placesVisible, setPlacesVisible] = useState(true);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [enabledFactors, setEnabledFactors] = useState<EnabledFactors>({
     genderBalance: true,
     socialVibe: true,
@@ -152,6 +152,12 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
     }
   };
 
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    toastTimeoutRef.current = setTimeout(() => setToastMessage(null), 3200);
+  };
+
   async function fetchLive(mode: "hot" | "radar") {
     try {
       setLiveLoading(true);
@@ -173,8 +179,12 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       if (!res.ok) throw new Error("Failed to fetch live data");
       const data = (await res.json()) as LiveResponse;
       setLiveData(data);
+      if (data.hasBestTimeKey && (data.geojson?.features?.length ?? 0) === 0) {
+        showToast("No hotspots returned. Tap refresh.");
+      }
     } catch (e) {
       setLiveError(e instanceof Error ? e.message : "Failed to fetch live data");
+      showToast("Hotspots unavailable. Tap refresh.");
     } finally {
       setLiveLoading(false);
     }
@@ -262,8 +272,6 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
   const requestAndCenterOnLocation = async () => {
     try {
       setHasRequestedLocation(true);
-      setLocationError(null);
-      setLocationHint(null);
 
       // If we already have a recent fix, just recenter (fast + battery friendly).
       if (userLocation && userLocationUpdatedAt && Date.now() - userLocationUpdatedAt < 60_000) {
@@ -278,7 +286,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
 
       // Geolocation requires a secure context (https) except on localhost.
       if (!window.isSecureContext) {
-        setLocationError("Location requires HTTPS. Open the secure site or add it to your home screen.");
+        showToast("Location requires HTTPS.");
         return;
       }
 
@@ -291,15 +299,8 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       setUserLocationAccuracy(loc.accuracy);
       setUserLocationUpdatedAt(Date.now());
 
-      if (loc.accuracy && loc.accuracy > 500) {
-        setLocationHint(
-          `Location is approximate (±${Math.round(loc.accuracy)}m). Turn on Precise Location in your browser settings for better accuracy.`
-        );
-      } else if (loc.accuracy && loc.accuracy > 0) {
-        setLocationHint(`Location updated (±${Math.round(loc.accuracy)}m).`);
-      } else {
-        setLocationHint("Location updated.");
-      }
+      if (loc.accuracy && loc.accuracy > 500) showToast(`Location updated (±${Math.round(loc.accuracy)}m).`);
+      else showToast("Location updated.");
 
       // If Radar is active, refresh live data around you
       if (liveEnabled && liveMode === "radar") {
@@ -314,11 +315,9 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       const msg = e instanceof Error ? e.message : "Failed to get location";
       // Unify copy for blocked/denied so it’s actionable.
       if (msg.toLowerCase().includes("denied") || msg.toLowerCase().includes("permission")) {
-        setLocationHint(
-          "Location is off. Hotspots still work. Enable location in iOS Settings → Privacy & Security → Location Services → Safari Websites → While Using (or Ask), then try again."
-        );
+        showToast("Location is off. Enable it in Safari settings.");
       } else {
-        setLocationError(msg);
+        showToast("Couldn’t get location.");
       }
     } finally {
       setLocating(false);
@@ -978,45 +977,23 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
             <RefreshCcw className="w-4 h-4" />
           </button>
         </div>
+      </div>
 
-        {locationError && (
-          <div className="mt-2 pointer-events-auto glass-light rounded-xl shadow-lg flex items-center justify-between gap-3 px-3 py-2 text-xs text-muted-foreground">
-            <span>{locationError}</span>
+      {/* Toast (simple, temporary) */}
+      {toastMessage && (
+        <div className="absolute inset-x-0 bottom-0 z-[70] pb-[calc(env(safe-area-inset-bottom)+7rem)] pointer-events-none flex justify-center">
+          <div className="pointer-events-auto glass-light rounded-full shadow-xl px-4 py-2 text-xs text-foreground flex items-center gap-3">
+            <span className="max-w-[70vw] truncate">{toastMessage}</span>
             <button
               className="p-1 hover:bg-black/5 rounded-full transition-colors"
-              onClick={() => setLocationError(null)}
-            >
-              <X className="w-4 h-4 text-gray-400" />
-            </button>
-          </div>
-        )}
-
-        {locationHint && !locationError && (
-          <div className="mt-2 pointer-events-auto glass-light rounded-xl shadow-lg flex items-center justify-between gap-3 px-3 py-2 text-xs text-muted-foreground">
-            <span>{locationHint}</span>
-            <button
-              className="p-1 hover:bg-black/5 rounded-full transition-colors"
-              onClick={() => setLocationHint(null)}
+              onClick={() => setToastMessage(null)}
               title="Dismiss"
             >
               <X className="w-4 h-4 text-gray-400" />
             </button>
           </div>
-        )}
-
-        {liveEnabled && liveData?.hasBestTimeKey && (liveData.geojson?.features?.length ?? 0) === 0 && (
-          <div className="mt-2 pointer-events-auto glass-light rounded-xl shadow-lg flex items-center justify-between gap-3 px-3 py-2 text-xs text-muted-foreground">
-            <span>No live hotspots returned. Tap refresh.</span>
-            <button
-              className="p-1 hover:bg-black/5 rounded-full transition-colors"
-              onClick={() => fetchLive(liveMode)}
-              title="Refresh"
-            >
-              <RefreshCcw className="w-4 h-4 text-gray-500" />
-            </button>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Floating GPS button (Google Maps style) */}
       <div
