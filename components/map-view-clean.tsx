@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Mood } from "@/lib/types";
-import { MapPin, Flame, RefreshCcw, Map as MapIcon } from "lucide-react";
+import { MapPin, Flame, RefreshCcw, Layers, Map as MapIcon } from "lucide-react";
 import type { Venue as PrismaVenue } from "@prisma/client";
 import { getScoreTier, calculateDynamicMeetingScore, type EnabledFactors, type VenueScoreData } from "@/lib/scoring";
 import mapboxgl from "mapbox-gl";
@@ -15,6 +15,14 @@ import {
   DrawerTrigger,
 } from "@/components/ui/drawer";
 import { Search, X, LocateFixed, Loader2 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 
 interface MapViewProps {
   mood: Mood;
@@ -942,8 +950,8 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
         <div className="relative h-14">
       {/* Search bar - center top */}
           <div className="absolute left-1/2 -translate-x-1/2 top-4 w-48 pointer-events-auto">
-        <div className="relative">
-          <div className="glass-light rounded-full shadow-lg flex items-center px-3 h-11">
+        <div className="relative flex flex-col items-center gap-2">
+          <div className="glass-light rounded-full shadow-lg flex items-center px-3 h-11 w-full">
             <Search className="w-5 h-5 text-gray-400 mr-2 shrink-0" />
             <input
               type="text"
@@ -980,6 +988,26 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
             )}
           </div>
 
+          {/* Live status + refresh (under search) */}
+          {liveEnabled && (
+            <div className="flex items-center gap-2 text-[11px] text-muted-foreground w-fit drop-shadow-sm">
+              <span>
+                {liveData?.updatedAt
+                  ? `Updated ${new Date(liveData.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                  : "Updating…"}
+              </span>
+              <button
+                className="p-1 hover:bg-black/5 rounded-full transition-colors disabled:opacity-60"
+                disabled={liveLoading}
+                onClick={() => fetchLive(liveMode)}
+                title="Refresh"
+                type="button"
+              >
+                <RefreshCcw className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+          )}
+
           {/* Search results dropdown */}
           {searchResults.length > 0 && (
             <div className="absolute top-full left-0 right-0 mt-2 glass rounded-xl shadow-xl overflow-hidden" style={{ pointerEvents: 'auto' }}>
@@ -1001,61 +1029,57 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
           )}
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Live controls (glass) */}
-      <div className="absolute inset-x-0 top-0 z-40 pt-[calc(env(safe-area-inset-top)+4.5rem)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pointer-events-none flex justify-center">
-        <div className="pointer-events-auto flex flex-col items-center gap-2">
-          <div className="glass-light rounded-full shadow-lg flex items-center gap-1 px-2 py-1">
-            <button
-              className={`rounded-full px-3 py-2 text-xs font-semibold transition-all flex items-center gap-2 ${
-                liveEnabled ? "bg-white/90" : "hover:bg-white/70"
-              }`}
-              onClick={async () => {
-                const next = !liveEnabled;
-                setLiveEnabled(next);
-                if (next) {
-                  setLiveMode("hot");
-                  setDrawerMode("live");
-                  setSelectedVenue(null);
-                  setDrawerOpen(true);
-                  await fetchLive("hot");
-                }
-              }}
-            >
-              <Flame className="w-4 h-4" />
-              Hotspots
-            </button>
-
-            <button
-              className={`rounded-full px-3 py-2 text-xs font-semibold transition-all flex items-center gap-2 ${
-                placesVisible ? "bg-white/90" : "hover:bg-white/70"
-              }`}
-              onClick={() => setPlacesVisible((v) => !v)}
-            >
-              <MapIcon className="w-4 h-4" />
-              Places
-            </button>
-          </div>
-
-          {liveEnabled && (
-            <div className="pointer-events-auto flex items-center gap-2 text-[11px] text-muted-foreground">
-              <span>
-                {liveData?.updatedAt
-                  ? `Updated ${new Date(liveData.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-                  : "Updating…"}
-              </span>
-              <button
-                className="p-1 hover:bg-black/5 rounded-full transition-colors disabled:opacity-60"
-                disabled={liveLoading}
-                onClick={() => fetchLive(liveMode)}
-                title="Refresh"
+          {/* Layers (top-right, icon-only) */}
+          <div className="absolute right-4 top-4 pointer-events-auto">
+            <DropdownMenu modal={false}>
+              <DropdownMenuTrigger asChild>
+                <button
+                  className="glass-light rounded-full shadow-lg p-3 hover:bg-white/80 transition-all"
+                  type="button"
+                  title="Layers"
+                >
+                  <Layers className="w-5 h-5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                // Prevent iOS Safari focus/scroll-jumps when the menu closes.
+                onCloseAutoFocus={(e) => e.preventDefault()}
+                side="bottom"
+                align="end"
+                sideOffset={8}
+                collisionPadding={12}
+                className="glass-light backdrop-blur-xl"
               >
-                <RefreshCcw className="w-4 h-4 text-gray-500" />
-              </button>
-            </div>
-          )}
+                <DropdownMenuLabel>Layers</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuCheckboxItem
+                  checked={liveEnabled}
+                  onSelect={(e) => e.preventDefault()}
+                  onCheckedChange={async (checked) => {
+                    const next = Boolean(checked);
+                    setLiveEnabled(next);
+                    if (next) {
+                      setLiveMode("hot");
+                      setDrawerMode("live");
+                      setSelectedVenue(null);
+                      setDrawerOpen(true);
+                      await fetchLive("hot");
+                    }
+                  }}
+                >
+                  Hotspots
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem
+                  checked={placesVisible}
+                  onSelect={(e) => e.preventDefault()}
+                  onCheckedChange={(checked) => setPlacesVisible(Boolean(checked))}
+                >
+                  Places
+                </DropdownMenuCheckboxItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </div>
 
@@ -1112,11 +1136,10 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
               onClick={requestAndCenterOnLocation}
               disabled={locating}
               className={[
-                "glass",
+                "glass-light",
                 "rounded-full",
-                "px-4",
-                "py-3",
-                "hover:bg-white/95",
+                "p-3",
+                "hover:bg-white/80",
                 "transition-all",
                 "shadow-xl",
                 "disabled:opacity-60",
