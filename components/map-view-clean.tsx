@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Mood } from "@/lib/types";
-import { ArrowLeft, MapPin, Flame, RefreshCcw, Map as MapIcon } from "lucide-react";
+import { MapPin, Flame, RefreshCcw, Map as MapIcon } from "lucide-react";
 import type { Venue as PrismaVenue } from "@prisma/client";
 import { getScoreTier, calculateDynamicMeetingScore, type EnabledFactors, type VenueScoreData } from "@/lib/scoring";
 import mapboxgl from "mapbox-gl";
@@ -66,6 +66,9 @@ type LiveResponse = {
   venues: LiveVenue[];
   geojson: GeoJSON.FeatureCollection;
   scale?: { mode: "relative"; minBusyNow: number; maxBusyNow: number; count: number };
+  stale?: boolean;
+  fallback?: "static";
+  message?: string;
 };
 
 const moodLabels = {
@@ -78,6 +81,7 @@ const moodLabels = {
 
 export function MapViewClean({ mood, onBack }: MapViewProps) {
   const [selectedVenue, setSelectedVenue] = useState<VenueWithScore | null>(null);
+  const selectedVenueRef = useRef<VenueWithScore | null>(null);
   const [venues, setVenues] = useState<VenueWithScore[]>([]);
   const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -108,6 +112,25 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
   const map = useRef<mapboxgl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const venuesRef = useRef<VenueWithScore[]>([]);
+  const venuesPointsRef = useRef<
+    Array<{
+      id: string;
+      lng: number;
+      lat: number;
+      name: string;
+      neighborhood: string;
+      address: string;
+      meetingScore: number;
+      isEnriched: boolean;
+      rating: number | null;
+      priceLevel: number | null;
+      weight: number;
+    }>
+  >([]);
+
+  useEffect(() => {
+    selectedVenueRef.current = selectedVenue;
+  }, [selectedVenue]);
 
   const venuesWithScores = useMemo(() => {
     return venues.map((venue) => {
@@ -179,9 +202,10 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       if (!res.ok) throw new Error("Failed to fetch live data");
       const data = (await res.json()) as LiveResponse;
       setLiveData(data);
-      if (data.hasBestTimeKey && (data.geojson?.features?.length ?? 0) === 0) {
-        showToast("No hotspots returned. Tap refresh.");
-      }
+      if (data.message) showToast(data.message);
+      else if (data.stale) showToast("Showing cached hotspots.");
+      else if (data.fallback === "static") showToast("Showing venue density.");
+      else if (data.hasBestTimeKey && (data.geojson?.features?.length ?? 0) === 0) showToast("No hotspots returned. Tap refresh.");
     } catch (e) {
       setLiveError(e instanceof Error ? e.message : "Failed to fetch live data");
       showToast("Hotspots unavailable. Tap refresh.");
@@ -286,7 +310,7 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
 
       // Geolocation requires a secure context (https) except on localhost.
       if (!window.isSecureContext) {
-        showToast("Location requires HTTPS.");
+        showToast("Location requires HTTPS on iOS. Open the Vercel URL (or an HTTPS tunnel) and try again.");
         return;
       }
 
@@ -361,6 +385,8 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       style: "mapbox://styles/mapbox/streets-v12",
       center: [-73.9712, 40.7831],
       zoom: 11,
+      // Remove the compact attribution "i" button; we'll show a tiny custom attribution label instead.
+      attributionControl: false,
     });
 
     map.current = newMap;
@@ -372,9 +398,6 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       newMap.addSource("venues", {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
-        cluster: true,
-        clusterMaxZoom: 14,
-        clusterRadius: 50,
       });
 
       // Live heat source (not clustered)
@@ -440,112 +463,6 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
         },
       });
 
-      // Layer 1: Cluster circles
-      // Glass shadow underlay (helps legibility on light map)
-      newMap.addLayer({
-        id: "clusters-shadow",
-        type: "circle",
-        source: "venues",
-        filter: ["has", "point_count"],
-        paint: {
-          "circle-color": "rgba(0,0,0,0.18)",
-          "circle-radius": [
-            "step",
-            ["get", "point_count"],
-            20, // small clusters
-            10, 26, // medium
-            50, 34, // large
-          ],
-          "circle-blur": 0.6,
-        },
-      });
-
-      newMap.addLayer({
-        id: "clusters",
-        type: "circle",
-        source: "venues",
-        filter: ["has", "point_count"],
-        paint: {
-          "circle-color": [
-            "step",
-            ["get", "point_count"],
-            "rgba(15,23,42,0.55)", // slate-900 glass (high contrast on light map)
-            10, "rgba(15,23,42,0.50)", // medium
-            50, "rgba(15,23,42,0.45)", // large
-          ],
-          "circle-radius": [
-            "step",
-            ["get", "point_count"],
-            18, // small clusters
-            10, 24, // medium
-            50, 32, // large
-          ],
-          "circle-opacity": 1,
-          "circle-stroke-width": 1.5,
-          "circle-stroke-color": "rgba(255,255,255,0.65)",
-          // Soft edge to mimic iOS glass depth
-          "circle-blur": 0.15,
-        },
-      });
-
-      // Layer 2: Cluster count labels
-      // Text shadow underlay (pseudo drop-shadow)
-      newMap.addLayer({
-        id: "cluster-count-shadow",
-        type: "symbol",
-        source: "venues",
-        filter: ["has", "point_count"],
-        layout: {
-          "text-field": [
-            "format",
-            ["get", "point_count_abbreviated"],
-            { "font-scale": 1.0 },
-            "\n",
-            {},
-            "🍸",
-            { "font-scale": 0.7 },
-          ],
-          "text-size": 11,
-          "text-font": ["DIN Offc Pro Medium", "Arial Unicode MS Bold"],
-          "text-offset": [0, 0.12],
-          "text-justify": "center",
-          "text-line-height": 1.0,
-        },
-        paint: {
-          "text-color": "rgba(0,0,0,0.35)",
-          "text-halo-color": "rgba(0,0,0,0)",
-          "text-halo-width": 0,
-        },
-      });
-
-      newMap.addLayer({
-        id: "cluster-count",
-        type: "symbol",
-        source: "venues",
-        filter: ["has", "point_count"],
-        layout: {
-          "text-field": [
-            "format",
-            ["get", "point_count_abbreviated"],
-            { "font-scale": 1.0 },
-            "\n",
-            {},
-            "🍸",
-            { "font-scale": 0.7 },
-          ],
-          "text-size": 11,
-          "text-font": ["DIN Offc Pro Medium", "Arial Unicode MS Bold"],
-          "text-justify": "center",
-          "text-line-height": 1.0,
-        },
-        paint: {
-          "text-color": "rgba(255,255,255,0.98)", // white for contrast
-          "text-halo-color": "rgba(0,0,0,0.25)",
-          "text-halo-width": 0.8,
-          "text-halo-blur": 0.4,
-        },
-      });
-
       // Layer 3: Unclustered points (base layer - small gray dots)
       newMap.addLayer({
         id: "unclustered-point",
@@ -568,14 +485,21 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
             // Base venues: subtle gray
             "#9ca3af",
           ],
+          // Default style (heatmap-first). NOTE: Mapbox requires ["zoom"] to be used only at the top level.
           "circle-radius": [
-            "case",
-            ["get", "isEnriched"],
-            10, // larger for enriched
-            6, // smaller for base
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            10,
+            ["case", ["get", "isEnriched"], 3, 2],
+            14,
+            ["case", ["get", "isEnriched"], 4, 3],
+            16,
+            ["case", ["get", "isEnriched"], 5, 4],
           ],
-          "circle-stroke-width": 2,
-          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 1,
+          "circle-stroke-color": "rgba(255,255,255,0.35)",
+          "circle-opacity": ["interpolate", ["linear"], ["zoom"], 10, 0.22, 14, 0.35, 16, 0.45],
         },
       });
 
@@ -662,24 +586,6 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
         },
       });
 
-      // Click on cluster → zoom in
-      newMap.on("click", "clusters", (e) => {
-        const features = newMap.queryRenderedFeatures(e.point, { layers: ["clusters"] });
-        const clusterId = features[0]?.properties?.cluster_id;
-        if (!clusterId) return;
-
-        (newMap.getSource("venues") as mapboxgl.GeoJSONSource).getClusterExpansionZoom(
-          clusterId,
-          (err, zoom) => {
-            if (err || !zoom) return;
-            newMap.easeTo({
-              center: (features[0].geometry as GeoJSON.Point).coordinates as [number, number],
-              zoom: zoom,
-            });
-          }
-        );
-      });
-
       // Click on venue → open drawer
       newMap.on("click", "unclustered-point", (e) => {
         const feature = e.features?.[0];
@@ -692,13 +598,22 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
         if (venue) selectVenue(venue);
       });
 
+      // Tap empty map (or start dragging) to dismiss venue detail so you can keep panning.
+      const dismissIfSelected = () => {
+        if (!selectedVenueRef.current) return;
+        setSelectedVenue(null);
+        setDrawerOpen(false);
+      };
+
+      newMap.on("click", (e) => {
+        // If you tapped a venue dot, let the layer handler above run.
+        const hit = newMap.queryRenderedFeatures(e.point, { layers: ["unclustered-point"] });
+        if (hit.length > 0) return;
+        dismissIfSelected();
+      });
+      newMap.on("dragstart", dismissIfSelected);
+
       // Cursor changes
-      newMap.on("mouseenter", "clusters", () => {
-        newMap.getCanvas().style.cursor = "pointer";
-      });
-      newMap.on("mouseleave", "clusters", () => {
-        newMap.getCanvas().style.cursor = "";
-      });
       newMap.on("mouseenter", "unclustered-point", () => {
         newMap.getCanvas().style.cursor = "pointer";
       });
@@ -725,24 +640,49 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
     // Update ref for click handler (avoids stale closure)
     venuesRef.current = venuesWithScores;
 
+    // Build a precomputed list of point records used for viewport-based sampling.
+    // This is what makes zooming feel "right": we sample from what's visible, not globally.
+    const weightFor = (v: VenueWithScore) => {
+      const score = typeof v.meetingScore === "number" ? v.meetingScore : 0;
+      const rating = typeof v.rating === "number" ? v.rating : 0;
+      const enriched = v.genderRatio || v.reviewSentiment || v.noiseComplaints ? 1 : 0;
+      return score * 10 + rating * 2 + enriched;
+    };
+
+    venuesPointsRef.current = venuesWithScores
+      .map((v) => ({
+        id: v.id,
+        lng: v.coordinates.lng,
+        lat: v.coordinates.lat,
+        name: v.name,
+        neighborhood: v.neighborhood,
+        address: v.address,
+        meetingScore: v.meetingScore || 0,
+        isEnriched: !!(v.genderRatio || v.reviewSentiment || v.noiseComplaints),
+        rating: v.rating ?? null,
+        priceLevel: v.priceLevel ?? null,
+        weight: weightFor(v),
+      }))
+      .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+
     // Convert venues to GeoJSON features
     const geojson: GeoJSON.FeatureCollection = {
       type: "FeatureCollection",
-      features: venuesWithScores.map((venue) => ({
+      features: venuesPointsRef.current.map((p) => ({
         type: "Feature",
         geometry: {
           type: "Point",
-          coordinates: [venue.coordinates.lng, venue.coordinates.lat],
+          coordinates: [p.lng, p.lat],
         },
         properties: {
-          id: venue.id,
-          name: venue.name,
-          address: venue.address,
-          neighborhood: venue.neighborhood,
-          meetingScore: venue.meetingScore || 0,
-          isEnriched: !!(venue.genderRatio || venue.reviewSentiment || venue.noiseComplaints),
-          rating: venue.rating,
-          priceLevel: venue.priceLevel,
+          id: p.id,
+          name: p.name,
+          address: p.address,
+          neighborhood: p.neighborhood,
+          meetingScore: p.meetingScore,
+          isEnriched: p.isEnriched,
+          rating: p.rating,
+          priceLevel: p.priceLevel,
         },
       })),
     };
@@ -759,6 +699,114 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       map.current.fitBounds(bounds, { padding: 50, maxZoom: 13 });
     }
   }, [venuesWithScores, mapLoaded, selectedVenue, venues.length]);
+
+  // Viewport-based dots: keep the map readable at low zoom, but show *more* dots as you zoom in.
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !mapLoaded) return;
+    const src = m.getSource("venues") as mapboxgl.GeoJSONSource | undefined;
+    if (!src) return;
+
+    let rafId: number | null = null;
+
+    const update = () => {
+      rafId = null;
+      const pts = venuesPointsRef.current;
+      if (!pts.length) return;
+
+      const bounds = m.getBounds();
+      if (!bounds) return;
+      const w = window.innerWidth;
+      const maxTotal = w < 640 ? 2500 : 5000; // denser, per your request
+
+      const candidates = pts.filter(
+        (p) =>
+          p.lng >= bounds.getWest() &&
+          p.lng <= bounds.getEast() &&
+          p.lat >= bounds.getSouth() &&
+          p.lat <= bounds.getNorth()
+      );
+
+      if (candidates.length === 0) {
+        src.setData({ type: "FeatureCollection", features: [] });
+        return;
+      }
+
+      // Pixel grid to avoid overplotting and to distribute dots across the viewport
+      const cellPx = 18;
+      const maxPerCell = 4;
+      const buckets = new Map<string, typeof candidates>();
+
+      for (const p of candidates) {
+        const pt = m.project([p.lng, p.lat]);
+        const x = Math.floor(pt.x / cellPx);
+        const y = Math.floor(pt.y / cellPx);
+        const key = `${x}:${y}`;
+        const arr = buckets.get(key);
+        if (arr) arr.push(p);
+        else buckets.set(key, [p]);
+      }
+
+      // Keep top-weight per cell
+      const keys = Array.from(buckets.keys());
+      for (const k of keys) {
+        const arr = buckets.get(k)!;
+        arr.sort((a, b) => b.weight - a.weight);
+        buckets.set(k, arr.slice(0, maxPerCell));
+      }
+
+      // Round-robin across cells for even distribution; higher weight cells still contribute first.
+      keys.sort((a, b) => (buckets.get(b)![0]?.weight ?? 0) - (buckets.get(a)![0]?.weight ?? 0));
+      const picked: any[] = [];
+      let progressed = true;
+      while (picked.length < maxTotal && progressed) {
+        progressed = false;
+        for (const k of keys) {
+          const arr = buckets.get(k);
+          if (!arr || arr.length === 0) continue;
+          picked.push(arr.shift()!);
+          progressed = true;
+          if (picked.length >= maxTotal) break;
+        }
+      }
+
+      const geojson: GeoJSON.FeatureCollection = {
+        type: "FeatureCollection",
+        features: picked.map((p: any) => ({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [p.lng, p.lat] },
+          properties: {
+            id: p.id,
+            name: p.name,
+            address: p.address,
+            neighborhood: p.neighborhood,
+            meetingScore: p.meetingScore,
+            isEnriched: p.isEnriched,
+            rating: p.rating,
+            priceLevel: p.priceLevel,
+          },
+        })),
+      };
+
+      src.setData(geojson);
+    };
+
+    const scheduleUpdate = () => {
+      if (rafId !== null) return;
+      rafId = window.requestAnimationFrame(update);
+    };
+
+    // Run once now + on movement
+    scheduleUpdate();
+    m.on("moveend", scheduleUpdate);
+    m.on("zoomend", scheduleUpdate);
+
+    return () => {
+      m.off("moveend", scheduleUpdate);
+      m.off("zoomend", scheduleUpdate);
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
+    };
+  }, [mapLoaded]);
 
   // Keep the selected ring synced with the selected venue (works for search + taps)
   useEffect(() => {
@@ -825,13 +873,47 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
   useEffect(() => {
     if (!map.current || !mapLoaded) return;
     const visibility = placesVisible ? "visible" : "none";
-    const layers = ["clusters", "cluster-count", "unclustered-point", "venue-labels"] as const;
+    const layers = ["unclustered-point", "venue-labels"] as const;
     for (const layerId of layers) {
       if (map.current.getLayer(layerId)) {
         map.current.setLayoutProperty(layerId, "visibility", visibility);
       }
     }
   }, [mapLoaded, placesVisible]);
+
+  // Heatmap-first UX: dynamically soften dots when heatmap is ON, and strengthen when heatmap is OFF.
+  useEffect(() => {
+    if (!map.current || !mapLoaded) return;
+    if (!map.current.getLayer("unclustered-point")) return;
+
+    const radiusBase = liveEnabled ? { base: 2, enriched: 3 } : { base: 3, enriched: 5 };
+    const opacity = liveEnabled ? { z10: 0.18, z14: 0.32, z16: 0.42 } : { z10: 0.55, z14: 0.75, z16: 0.9 };
+    const stroke = liveEnabled ? "rgba(255,255,255,0.28)" : "rgba(255,255,255,0.7)";
+
+    map.current.setPaintProperty("unclustered-point", "circle-opacity", [
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+      10,
+      opacity.z10,
+      14,
+      opacity.z14,
+      16,
+      opacity.z16,
+    ]);
+    map.current.setPaintProperty("unclustered-point", "circle-stroke-color", stroke);
+    map.current.setPaintProperty("unclustered-point", "circle-radius", [
+      "interpolate",
+      ["linear"],
+      ["zoom"],
+      10,
+      ["case", ["get", "isEnriched"], radiusBase.enriched, radiusBase.base],
+      14,
+      ["case", ["get", "isEnriched"], radiusBase.enriched + 1, radiusBase.base + 1],
+      16,
+      ["case", ["get", "isEnriched"], radiusBase.enriched + 2, radiusBase.base + 2],
+    ]);
+  }, [mapLoaded, liveEnabled]);
 
   const getPriceSymbol = (level: number) => "$".repeat(level);
 
@@ -858,20 +940,9 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
       {/* Top overlays (safe-area padded; map stays full-bleed) */}
       <div className="absolute inset-x-0 top-0 z-50 pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pointer-events-none">
         <div className="relative h-14">
-          {/* Back button with frosted glass effect */}
-          <button
-            onClick={() => {
-              console.log("⬅️ Back button clicked");
-              onBack();
-            }}
-            className="absolute left-4 top-4 glass-light rounded-full p-3 hover:bg-white/90 transition-all shadow-lg pointer-events-auto"
-          >
-            <ArrowLeft className="w-5 h-5 text-foreground" />
-          </button>
-
-          {/* Search bar - center top */}
+      {/* Search bar - center top */}
           <div className="absolute left-1/2 -translate-x-1/2 top-4 w-48 pointer-events-auto">
-            <div className="relative">
+        <div className="relative">
           <div className="glass-light rounded-full shadow-lg flex items-center px-3 h-11">
             <Search className="w-5 h-5 text-gray-400 mr-2 shrink-0" />
             <input
@@ -935,47 +1006,56 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
 
       {/* Live controls (glass) */}
       <div className="absolute inset-x-0 top-0 z-40 pt-[calc(env(safe-area-inset-top)+4.5rem)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pointer-events-none flex justify-center">
-        <div className="pointer-events-auto glass-light rounded-full shadow-lg flex items-center gap-1 px-2 py-1">
-          <button
-            className={`rounded-full px-3 py-2 text-xs font-semibold transition-all flex items-center gap-2 ${
-              liveEnabled ? "bg-white/90" : "hover:bg-white/70"
-            }`}
-            onClick={async () => {
-              const next = !liveEnabled;
-              setLiveEnabled(next);
-              if (next) {
-                setLiveMode("hot");
-                setDrawerMode("live");
-                setSelectedVenue(null);
-                setDrawerOpen(true);
-                await fetchLive("hot");
-              }
-            }}
-          >
-            <Flame className="w-4 h-4" />
-            Hotspots
-          </button>
+        <div className="pointer-events-auto flex flex-col items-center gap-2">
+          <div className="glass-light rounded-full shadow-lg flex items-center gap-1 px-2 py-1">
+            <button
+              className={`rounded-full px-3 py-2 text-xs font-semibold transition-all flex items-center gap-2 ${
+                liveEnabled ? "bg-white/90" : "hover:bg-white/70"
+              }`}
+              onClick={async () => {
+                const next = !liveEnabled;
+                setLiveEnabled(next);
+                if (next) {
+                  setLiveMode("hot");
+                  setDrawerMode("live");
+                  setSelectedVenue(null);
+                  setDrawerOpen(true);
+                  await fetchLive("hot");
+                }
+              }}
+            >
+              <Flame className="w-4 h-4" />
+              Hotspots
+            </button>
 
-          <button
-            className={`rounded-full px-3 py-2 text-xs font-semibold transition-all flex items-center gap-2 ${
-              placesVisible ? "bg-white/90" : "hover:bg-white/70"
-            }`}
-            onClick={() => setPlacesVisible((v) => !v)}
-          >
-            <MapIcon className="w-4 h-4" />
-            Places
-          </button>
+            <button
+              className={`rounded-full px-3 py-2 text-xs font-semibold transition-all flex items-center gap-2 ${
+                placesVisible ? "bg-white/90" : "hover:bg-white/70"
+              }`}
+              onClick={() => setPlacesVisible((v) => !v)}
+            >
+              <MapIcon className="w-4 h-4" />
+              Places
+            </button>
+          </div>
 
-          <button
-            className="rounded-full px-3 py-2 text-xs font-semibold hover:bg-white/70 transition-all flex items-center gap-2 disabled:opacity-50"
-            disabled={!liveEnabled || liveLoading}
-            onClick={async () => {
-              if (!liveEnabled) return;
-              await fetchLive(liveMode);
-            }}
-          >
-            <RefreshCcw className="w-4 h-4" />
-          </button>
+          {liveEnabled && (
+            <div className="pointer-events-auto flex items-center gap-2 text-[11px] text-muted-foreground">
+              <span>
+                {liveData?.updatedAt
+                  ? `Updated ${new Date(liveData.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                  : "Updating…"}
+              </span>
+              <button
+                className="p-1 hover:bg-black/5 rounded-full transition-colors disabled:opacity-60"
+                disabled={liveLoading}
+                onClick={() => fetchLive(liveMode)}
+                title="Refresh"
+              >
+                <RefreshCcw className="w-4 h-4 text-gray-500" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -991,42 +1071,13 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
             >
               <X className="w-4 h-4 text-gray-400" />
             </button>
-          </div>
-        </div>
+              </div>
+              </div>
       )}
 
-      {/* Floating GPS button (Google Maps style) */}
-      <div
-        className="absolute bottom-0 right-0 z-[60] pr-[calc(env(safe-area-inset-right)+1rem)] pointer-events-none"
-        style={{
-          paddingBottom: drawerOpen
-            ? "calc(50vh + env(safe-area-inset-bottom) + 1rem)"
-            : "calc(env(safe-area-inset-bottom) + 5.5rem)",
-        }}
-      >
-        <button
-          type="button"
-          title="Current location"
-          onClick={requestAndCenterOnLocation}
-          disabled={locating}
-          className={[
-            "pointer-events-auto",
-            "glass-light",
-            "rounded-full",
-            "p-3",
-            "shadow-xl",
-            "border",
-            "border-black/5",
-            "hover:bg-white/80",
-            "active:scale-95",
-            "transition-all",
-            "disabled:opacity-60",
-            // Slow blink until first tap (permission prompt trigger)
-            !hasRequestedLocation ? "animate-[pulse_2.8s_ease-in-out_infinite]" : "",
-          ].join(" ")}
-        >
-          {locating ? <Loader2 className="w-5 h-5 animate-spin" /> : <LocateFixed className="w-5 h-5" />}
-        </button>
+      {/* Tiny attribution label (replaces Mapbox compact "i" control) */}
+      <div className="absolute bottom-0 right-0 z-[40] pr-[calc(env(safe-area-inset-right)+0.75rem)] pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pointer-events-none">
+        <span className="text-[10px] text-black/40">© Mapbox © OpenStreetMap</span>
       </div>
 
       {/* Drawer component - slides up from bottom */}
@@ -1039,15 +1090,44 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
         setDrawerOpen(open);
       }}
       >
-        <DrawerTrigger asChild>
-          <div className="absolute inset-x-0 bottom-0 z-50 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pointer-events-none flex justify-center">
-            <button className="glass rounded-full px-6 py-3 hover:bg-white/95 transition-all shadow-xl pointer-events-auto">
-              <span className="text-sm font-semibold text-foreground">
-                {loading ? "Loading..." : `${venues.length} venues`}
-              </span>
+        <div className="absolute inset-x-0 bottom-0 z-50 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pointer-events-none">
+          {/* Center: venues pill (anchored to same baseline as GPS) */}
+          <div className="flex justify-center">
+            <div className="pointer-events-auto">
+              <DrawerTrigger asChild>
+                <button className="glass rounded-full px-6 py-3 hover:bg-white/95 transition-all shadow-xl">
+                  <span className="text-sm font-semibold text-foreground">
+                    {loading ? "Loading..." : `${venues.length} venues`}
+                  </span>
+                </button>
+              </DrawerTrigger>
+            </div>
+          </div>
+
+          {/* Far right: GPS (match venues pill height) */}
+          <div className="absolute right-0 top-0 pr-[calc(env(safe-area-inset-right)+1rem)] pointer-events-auto">
+            <button
+              type="button"
+              title="Current location"
+              onClick={requestAndCenterOnLocation}
+              disabled={locating}
+              className={[
+                "glass",
+                "rounded-full",
+                "px-4",
+                "py-3",
+                "hover:bg-white/95",
+                "transition-all",
+                "shadow-xl",
+                "disabled:opacity-60",
+                // Slow blink until first tap (permission prompt trigger)
+                !hasRequestedLocation ? "animate-[pulse_2.8s_ease-in-out_infinite]" : "",
+              ].join(" ")}
+            >
+              {locating ? <Loader2 className="w-5 h-5 animate-spin" /> : <LocateFixed className="w-5 h-5" />}
             </button>
           </div>
-        </DrawerTrigger>
+        </div>
 
         <DrawerContent className="max-h-[50vh] bg-white/95 backdrop-blur-xl shadow-2xl pb-[env(safe-area-inset-bottom)]">
           {selectedVenue ? (
@@ -1175,62 +1255,62 @@ export function MapViewClean({ mood, onBack }: MapViewProps) {
                   </div>
                 </div>
               </>
-            ) : (
-              // Venue list view
-              <>
-                <DrawerHeader>
-                  <DrawerTitle>{venues.length} Venues</DrawerTitle>
-                </DrawerHeader>
-                <div className="overflow-y-auto px-4 pb-8">
-                  <div className="grid gap-3">
+          ) : (
+            // Venue list view
+            <>
+              <DrawerHeader>
+                <DrawerTitle>{venues.length} Venues</DrawerTitle>
+              </DrawerHeader>
+              <div className="overflow-y-auto px-4 pb-8">
+                <div className="grid gap-3">
                     {venuesWithScores
                       .slice()
-                      .sort((a, b) => (b.meetingScore || 0) - (a.meetingScore || 0))
-                      .map((venue, index) => {
-                        const tier = venue.meetingScore ? getScoreTier(venue.meetingScore) : null;
-                        const score = venue.meetingScore || 0;
+                    .sort((a, b) => (b.meetingScore || 0) - (a.meetingScore || 0))
+                    .map((venue, index) => {
+                      const tier = venue.meetingScore ? getScoreTier(venue.meetingScore) : null;
+                      const score = venue.meetingScore || 0;
 
-                        let badgeColor = "bg-gray-100 text-gray-700";
-                        if (score >= 8) badgeColor = "bg-purple-500 text-white";
-                        else if (score >= 7) badgeColor = "bg-blue-500 text-white";
-                        else if (score >= 6) badgeColor = "bg-cyan-500 text-white";
+                      let badgeColor = "bg-gray-100 text-gray-700";
+                      if (score >= 8) badgeColor = "bg-purple-500 text-white";
+                      else if (score >= 7) badgeColor = "bg-blue-500 text-white";
+                      else if (score >= 6) badgeColor = "bg-cyan-500 text-white";
 
-                        return (
-                          <button
-                            key={venue.id}
-                            onClick={() => {
+                      return (
+                        <button
+                          key={venue.id}
+                          onClick={() => {
                               selectVenue(venue);
-                            }}
-                            className="text-left p-4 rounded-lg border border-border/50 hover:bg-accent transition-all"
-                          >
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span className="text-lg">{tier?.emoji || "📍"}</span>
-                                  <h3 className="font-semibold">{venue.name}</h3>
-                                  {index < 3 && (
-                                    <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full font-semibold">
-                                      TOP {index + 1}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                  <MapPin className="w-3 h-3" />
-                                  <span>{venue.neighborhood}</span>
-                                </div>
+                          }}
+                          className="text-left p-4 rounded-lg border border-border/50 hover:bg-accent transition-all"
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-lg">{tier?.emoji || "📍"}</span>
+                                <h3 className="font-semibold">{venue.name}</h3>
+                                {index < 3 && (
+                                  <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full font-semibold">
+                                    TOP {index + 1}
+                                  </span>
+                                )}
                               </div>
-                              {score > 0 && (
-                                <div className={`${badgeColor} text-2xl font-bold px-4 py-2 rounded-full shadow-md`}>
-                                  {score}
-                                </div>
-                              )}
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <MapPin className="w-3 h-3" />
+                                <span>{venue.neighborhood}</span>
+                              </div>
                             </div>
-                          </button>
-                        );
-                      })}
-                  </div>
+                            {score > 0 && (
+                              <div className={`${badgeColor} text-2xl font-bold px-4 py-2 rounded-full shadow-md`}>
+                                {score}
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
                 </div>
-              </>
+              </div>
+            </>
             )
           )}
         </DrawerContent>

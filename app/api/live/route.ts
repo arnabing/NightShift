@@ -2,6 +2,30 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getBestTimeVenueFilter } from "@/lib/besttime";
 
+type HotspotPoint = { venueId: string; name: string; address: string | null; lat: number; lng: number; now: number };
+
+type HotspotsPayload = {
+  venues: Array<{
+    id: string;
+    name: string;
+    lat: number;
+    lng: number;
+    address: string;
+    neighborhood: string;
+    venueType: string | null;
+    meetingScore: number | null;
+    rating: number | null;
+    noiseComplaints: number | null;
+    live: { available: boolean; liveBusyness: number | null; forecastBusyness: number | null };
+  }>;
+  geojson: { type: "FeatureCollection"; features: any[] };
+  scale: { mode: "relative"; minBusyNow: number; maxBusyNow: number; count: number };
+};
+
+// Module-level cache (best-effort; persists in dev and in warm serverless instances)
+const HOT_CACHE_TTL_MS = 10 * 60 * 1000; // 10m
+let lastHotCache: { updatedAt: number; payload: HotspotsPayload } | null = null;
+
 function numParam(url: URL, key: string, fallback: number): number {
   const raw = url.searchParams.get(key);
   if (!raw) return fallback;
@@ -46,6 +70,7 @@ export async function GET(req: Request) {
   const mode = strParam(url, "mode", "hot"); // "hot" | "radar"
   const limit = Math.max(1, Math.min(500, numParam(url, "limit", mode === "radar" ? 80 : 250)));
   const debug = url.searchParams.get("debug") === "1";
+  const servedAt = new Date().toISOString();
 
   const apiKeyPrivate = process.env.BESTTIME_API_KEY_PRIVATE;
 
@@ -54,7 +79,8 @@ export async function GET(req: Request) {
     return NextResponse.json({
       mode,
       hasBestTimeKey: false,
-      updatedAt: new Date().toISOString(),
+      // For the UI, this is "last updated" (here: when we served the empty response)
+      updatedAt: servedAt,
       venues: [],
       geojson: { type: "FeatureCollection", features: [] },
     });
@@ -163,7 +189,7 @@ export async function GET(req: Request) {
         ]
       : [];
 
-  let hotspotPoints: Array<{ venueId: string; name: string; address: string | null; lat: number; lng: number; now: number }> = [];
+  let hotspotPoints: HotspotPoint[] = [];
 
   if (mode === "hot") {
     if (debug) {
@@ -242,6 +268,126 @@ export async function GET(req: Request) {
     hotspotPoints = Array.from(dedup.values()).sort((a, b) => b.now - a.now).slice(0, limit);
   }
 
+  // If BestTime returned nothing, try to detect quota/errors and fall back.
+  if (mode === "hot" && hotspotPoints.length === 0) {
+    try {
+      const c = { lat: 40.758, lng: -73.985 };
+      const btUrl = new URL("https://besttime.app/api/v1/venues/filter");
+      btUrl.searchParams.set("api_key_private", apiKeyPrivate);
+      btUrl.searchParams.set("busy_min", "25");
+      btUrl.searchParams.set("busy_max", "100");
+      btUrl.searchParams.set("types", "BAR,NIGHT_CLUB");
+      btUrl.searchParams.set("lat", String(c.lat));
+      btUrl.searchParams.set("lng", String(c.lng));
+      btUrl.searchParams.set("radius", "5000");
+      btUrl.searchParams.set("order_by", "now");
+      btUrl.searchParams.set("order", "desc");
+      btUrl.searchParams.set("foot_traffic", "both");
+      btUrl.searchParams.set("limit", "1");
+      btUrl.searchParams.set("page", "0");
+
+      const res = await fetch(btUrl.toString(), { headers: { accept: "application/json" }, cache: "no-store" });
+      const text = await res.text();
+      let parsed: any = null;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        parsed = null;
+      }
+
+      const msg = typeof parsed?.message === "string" ? parsed.message : typeof parsed?.error === "string" ? parsed.error : "";
+      const isQuota =
+        !res.ok && (msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("subscribe"));
+
+      if (!res.ok) {
+        // 1) Use last-good BestTime cache if available (stale)
+        if (lastHotCache && Date.now() - lastHotCache.updatedAt < HOT_CACHE_TTL_MS) {
+          return NextResponse.json({
+            mode,
+            hasBestTimeKey: true,
+            // Preserve the original data timestamp (not "now")
+            updatedAt: new Date(lastHotCache.updatedAt).toISOString(),
+            stale: true,
+            message: isQuota ? "BestTime quota reached — showing cached hotspots." : "BestTime unavailable — showing cached hotspots.",
+            ...lastHotCache.payload,
+          });
+        }
+
+        // 2) Otherwise fallback to static venue-density
+        const fallbackTake = Math.min(2000, Math.max(limit, 800));
+        const density = await prisma.venue.findMany({
+          select: {
+            id: true,
+            name: true,
+            lat: true,
+            lng: true,
+            address: true,
+            neighborhood: true,
+            venueType: true,
+            meetingScore: true,
+            rating: true,
+            noiseComplaints: true,
+            updatedAt: true,
+          },
+          take: fallbackTake,
+        });
+        const densityUpdatedAt =
+          density.length > 0
+            ? new Date(Math.max(...density.map((v) => new Date(v.updatedAt).getTime()))).toISOString()
+            : servedAt;
+
+        const densityPoints: HotspotPoint[] = density.map((v) => ({
+          venueId: v.id,
+          name: v.name,
+          address: v.address,
+          lat: v.lat,
+          lng: v.lng,
+          now: 50, // neutral (not "busy now")—used only for fallback visualization
+        }));
+
+        const geojson = {
+          type: "FeatureCollection" as const,
+          features: densityPoints.slice(0, limit).map((v) => ({
+            type: "Feature" as const,
+            geometry: { type: "Point" as const, coordinates: [v.lng, v.lat] as [number, number] },
+            properties: {
+              id: v.venueId,
+              name: v.name,
+              busyNow: v.now,
+              heatWeight: 0.22, // constant density
+            },
+          })),
+        };
+
+        return NextResponse.json({
+          mode,
+          hasBestTimeKey: true,
+          // Show venue dataset freshness rather than "now"
+          updatedAt: densityUpdatedAt,
+          fallback: "static",
+          message: isQuota ? "BestTime quota reached — showing venue density." : "BestTime unavailable — showing venue density.",
+          scale: { mode: "relative" as const, minBusyNow: 0, maxBusyNow: 0, count: geojson.features.length },
+          venues: geojson.features.map((f: any) => ({
+            id: f.properties.id,
+            name: f.properties.name,
+            lat: f.geometry.coordinates[1],
+            lng: f.geometry.coordinates[0],
+            address: "",
+            neighborhood: "NYC",
+            venueType: null,
+            meetingScore: null,
+            rating: null,
+            noiseComplaints: null,
+            live: { available: false, liveBusyness: null, forecastBusyness: null },
+          })),
+          geojson,
+        });
+      }
+    } catch {
+      // If even probing fails, proceed and return empty response below.
+    }
+  }
+
   // GeoJSON for map heat/markers
   const busyValues = hotspotPoints.map((v) => v.now).filter((n) => Number.isFinite(n));
   const maxBusyNow = busyValues.length ? Math.max(...busyValues) : 0;
@@ -263,16 +409,7 @@ export async function GET(req: Request) {
       })),
   };
 
-  return NextResponse.json({
-    mode,
-    hasBestTimeKey: true,
-    updatedAt: new Date().toISOString(),
-    scale: {
-      mode: "relative" as const,
-      minBusyNow,
-      maxBusyNow,
-      count: hotspotPoints.length,
-    },
+  const payload: HotspotsPayload = {
     venues: hotspotPoints.map((v) => ({
       id: v.venueId,
       name: v.name,
@@ -287,6 +424,25 @@ export async function GET(req: Request) {
       live: { available: false, liveBusyness: null, forecastBusyness: v.now },
     })),
     geojson,
+    scale: {
+      mode: "relative" as const,
+      minBusyNow,
+      maxBusyNow,
+      count: hotspotPoints.length,
+    },
+  };
+
+  // Cache last-good BestTime hotspots (only when non-empty)
+  if (mode === "hot" && hotspotPoints.length > 0) {
+    lastHotCache = { updatedAt: Date.now(), payload };
+  }
+
+  return NextResponse.json({
+    mode,
+    hasBestTimeKey: true,
+    // For successful BestTime fetches, this is the data generation time.
+    updatedAt: servedAt,
+    ...payload,
   });
 }
 
